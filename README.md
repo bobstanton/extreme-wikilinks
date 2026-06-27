@@ -2,6 +2,9 @@
 
 Take your Wikilinks to the eXtreme! by using frontmatter to customize their appearance. EXTREME!
 
+[Screencast_20260625_183949.webm](https://github.com/user-attachments/assets/e623fa1f-c1ac-461a-8078-35a5098b75b9)
+
+
 Using frontmatter such as:
 
 ```yaml
