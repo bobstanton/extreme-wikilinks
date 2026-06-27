@@ -1,0 +1,37 @@
+.extreme-wikilinks-link {
+  display: inline;
+  text-decoration: none;
+}
+
+.extreme-wikilinks-link-rendering {
+  visibility: hidden;
+}
+
+.extreme-wikilinks-linked-token {
+  text-decoration: var(--link-decoration);
+  overflow-wrap: anywhere;
+}
+
+.extreme-wikilinks-template textarea {
+  min-height: 4.5rem;
+}
+
+.extreme-wikilinks-template-setting {
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.extreme-wikilinks-template-setting .setting-item-info {
+  flex: 0 0 10rem;
+  padding-top: 0.25rem;
+}
+
+.extreme-wikilinks-template-setting .setting-item-control {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.extreme-wikilinks-template-setting textarea {
+  width: 100%;
+  min-width: 18rem;
+}

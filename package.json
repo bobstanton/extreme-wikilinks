@@ -1,0 +1,38 @@
+{
+  "name": "extreme-wikilinks",
+  "version": "0.1.0",
+  "description": "Take your Wikilinks to the eXtreme! By applying templates to change their appearance. EXTREME!",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs watch",
+    "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit --skipLibCheck",
+    "obsidian-review": "node ../obsidian-plugin-review/dist/cli.js run --repo . --type plugin",
+    "review": "npm run lint && npm run typecheck && npm run build && npm run obsidian-review"
+  },
+  "keywords": [],
+  "author": "Bob Stanton",
+  "license": "AGPL-3.0-only",
+  "dependencies": {
+    "obsidian-debug-logger": "git+https://github.com/bobstanton/obsidian-debug-logger.git",
+    "placeholder-resolver": "git+https://github.com/bobstanton/placeholder-resolver.git"
+  },
+  "devDependencies": {
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/state": "^6.5.0",
+    "@codemirror/view": "^6.38.6",
+    "@eslint/js": "^9.39.4",
+    "@lezer/common": "^1.5.2",
+    "@microsoft/eslint-plugin-sdl": "^1.1.0",
+    "@types/node": "^25.6.0",
+    "@typescript-eslint/eslint-plugin": "^8.58.2",
+    "@typescript-eslint/parser": "^8.58.2",
+    "esbuild": "^0.28.0",
+    "eslint": "^9.39.4",
+    "eslint-plugin-obsidianmd": "^0.2.4",
+    "obsidian": "latest",
+    "tslib": "2.8.1",
+    "typescript": "^6.0.3"
+  }
+}
