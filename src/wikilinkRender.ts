@@ -38,6 +38,11 @@ export interface WikilinkToken {
   readonly linkDisplayText: string | null;
 }
 
+export interface ExcludeRegexps {
+  readonly source: RegExp[];
+  readonly target: RegExp[];
+}
+
 export function createRenderCaches(): WikilinkRenderCaches {
   return {
     targetFiles: new Map(),
@@ -63,14 +68,17 @@ export function getOrCompute<K, V>(cache: Map<K, V>, key: K, compute: () => V): 
   return cache.get(key) as V;
 }
 
-export function createExcludeMatcher(): (settings: ExtremeWikilinksSettings) => RegExp[] {
+export function createExcludeMatcher(): (settings: ExtremeWikilinksSettings) => ExcludeRegexps {
   let key: string | null = null;
-  let regexps: RegExp[] = [];
+  let regexps: ExcludeRegexps = { source: [], target: [] };
   return (settings) => {
-    const nextKey = settings.excludePatterns.join('\n');
+    const nextKey = JSON.stringify(settings.excludePatterns);
     if (nextKey !== key) {
       key = nextKey;
-      regexps = settings.excludePatterns.map(pattern => compileRegex(pattern));
+      regexps = {
+        source: settings.excludePatterns.filter(({ matchSource }) => matchSource).map(({ pattern }) => compileRegex(pattern)),
+        target: settings.excludePatterns.filter(({ matchTarget }) => matchTarget).map(({ pattern }) => compileRegex(pattern)),
+      };
     }
     return regexps;
   };
@@ -99,9 +107,10 @@ export function resolveExplicitTargetFile(app: App, path: string): TFile | null 
   return file instanceof TFile ? file : null;
 }
 
-export function getWikilinkRenderMatch(app: App, settings: ExtremeWikilinksSettings, request: WikilinkRenderRequest, caches: WikilinkRenderCaches): WikilinkRenderMatch | null {
+export function getWikilinkRenderMatch(app: App, settings: ExtremeWikilinksSettings, request: WikilinkRenderRequest, caches: WikilinkRenderCaches, excludeRegexps: ExcludeRegexps): WikilinkRenderMatch | null {
   const targetFile = getOrCompute(caches.targetFiles, request.rawTarget, () => resolveTargetFile(app, request.rawTarget, request.sourcePath));
   if (!targetFile) return null;
+  if (isPathExcluded(targetFile.path, excludeRegexps.target)) return null;
 
   const linkDisplayText = request.linkDisplayText ?? targetFile.basename;
   const sourceHeading = request.sourceHeading ?? findSourceHeadingBefore(app, request.sourcePath, request);

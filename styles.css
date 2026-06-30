@@ -35,3 +35,20 @@
   width: 100%;
   min-width: 18rem;
 }
+
+.extreme-wikilinks-exclude-pattern {
+  margin: 0.75rem 0;
+  padding: 0 1rem;
+  background: var(--background-secondary);
+  border-radius: var(--radius-m);
+}
+
+.extreme-wikilinks-exclude-pattern > .setting-item {
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.extreme-wikilinks-exclude-pattern > .setting-item:not(:last-child) {
+  border-bottom: 1px solid var(--background-modifier-border);
+}

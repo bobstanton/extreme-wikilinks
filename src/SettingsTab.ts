@@ -1,6 +1,7 @@
 import { PluginSettingTab, Setting } from 'obsidian';
 import type ExtremeWikilinksPlugin from './main';
 import { isValidRegex } from './regexUtils';
+import { createExcludePattern } from './settings';
 import type { HeadingMatchMode, LinkTemplate } from './settings';
 
 export class ExtremeWikilinksSettingTab extends PluginSettingTab {
@@ -17,13 +18,14 @@ export class ExtremeWikilinksSettingTab extends PluginSettingTab {
   }
 
   private renderExcludePatterns(containerEl: HTMLElement): void {
-    new Setting(containerEl).setName('Exclude patterns').setHeading().setDesc('Notes matching these patterns will not have templates applied. Patterns are JavaScript regular expressions matched against note paths, like \\.tmp$ or ^archive/.');
+    new Setting(containerEl).setName('Exclude patterns').setHeading().setDesc('Patterns are JavaScript regular expressions matched against note paths, like \\.tmp$ or ^archive/.');
 
-    this.plugin.settings.excludePatterns.forEach((pattern, index) => {
-      new Setting(containerEl).setName(`Pattern ${index + 1}`)
+    this.plugin.settings.excludePatterns.forEach((excludePattern, index) => {
+      const patternEl = containerEl.createDiv({ cls: 'extreme-wikilinks-exclude-pattern' });
+      new Setting(patternEl).setName(`Pattern ${index + 1}`)
         .addText((text) => {
-          text.setValue(pattern);
-          this.updateRegexInputState(text.inputEl, pattern);
+          text.setValue(excludePattern.pattern);
+          this.updateRegexInputState(text.inputEl, excludePattern.pattern);
 
           text.onChange((value) => {
             if (!isValidRegex(value)) {
@@ -31,7 +33,7 @@ export class ExtremeWikilinksSettingTab extends PluginSettingTab {
               return;
             }
 
-            this.plugin.settings.excludePatterns[index] = value;
+            excludePattern.pattern = value;
             this.updateRegexInputState(text.inputEl, value);
             void this.plugin.saveSettings();
           });
@@ -41,11 +43,23 @@ export class ExtremeWikilinksSettingTab extends PluginSettingTab {
           void this.plugin.saveSettings();
           this.display();
         }));
+
+      new Setting(patternEl).setName('Apply to notes containing links').setDesc('Use this pattern against notes that contain wikilinks.')
+        .addToggle((toggle) => toggle.setValue(excludePattern.matchSource).onChange((value) => {
+          excludePattern.matchSource = value;
+          void this.plugin.saveSettings();
+        }));
+
+      new Setting(patternEl).setName('Apply to note targets').setDesc('Use this pattern against resolved wikilink target notes.')
+        .addToggle((toggle) => toggle.setValue(excludePattern.matchTarget).onChange((value) => {
+          excludePattern.matchTarget = value;
+          void this.plugin.saveSettings();
+        }));
     });
 
     new Setting(containerEl)
       .addButton((button) => button.setButtonText('Add exclude pattern').setCta().onClick(() => {
-        this.plugin.settings.excludePatterns.push('\\.tmp$');
+        this.plugin.settings.excludePatterns.push(createExcludePattern());
         void this.plugin.saveSettings();
         this.display();
       }));

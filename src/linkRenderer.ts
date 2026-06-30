@@ -2,7 +2,7 @@ import { App, MarkdownPostProcessorContext, MarkdownRenderChild } from 'obsidian
 import type { ExtremeWikilinksSettings } from './settings';
 import { renderTemplateMarkdown } from './templateOutputRenderer';
 import { recordTemplateFailure } from './logger';
-import { createExcludeMatcher, createRenderCaches, createWikilinkRenderRequest, getRenderedParts, getWikilinkRenderMatch, isPathExcluded, parseWikilinkTarget, type WikilinkRenderCaches } from './wikilinkRender';
+import { createExcludeMatcher, createRenderCaches, createWikilinkRenderRequest, getRenderedParts, getWikilinkRenderMatch, isPathExcluded, parseWikilinkTarget, type ExcludeRegexps, type WikilinkRenderCaches } from './wikilinkRender';
 
 export class LinkRenderer {
   private readonly getExcludeRegexps = createExcludeMatcher();
@@ -15,7 +15,8 @@ export class LinkRenderer {
     }
 
     const settings = this.getSettings();
-    if (isPathExcluded(context.sourcePath, this.getExcludeRegexps(settings))) {
+    const excludeRegexps = this.getExcludeRegexps(settings);
+    if (isPathExcluded(context.sourcePath, excludeRegexps.source)) {
       return;
     }
 
@@ -26,17 +27,17 @@ export class LinkRenderer {
 
     const caches = createRenderCaches();
     const links = Array.from(root.querySelectorAll<HTMLAnchorElement>('a.internal-link'));
-    await Promise.all(links.map(link => this.processLink(link, context, settings, sectionInfo.lineStart, caches)));
+    await Promise.all(links.map(link => this.processLink(link, context, settings, excludeRegexps, sectionInfo.lineStart, caches)));
   }
 
-  private async processLink(link: HTMLAnchorElement, context: MarkdownPostProcessorContext, settings: ExtremeWikilinksSettings, sourceLine: number, caches: WikilinkRenderCaches): Promise<void> {
+  private async processLink(link: HTMLAnchorElement, context: MarkdownPostProcessorContext, settings: ExtremeWikilinksSettings, excludeRegexps: ExcludeRegexps, sourceLine: number, caches: WikilinkRenderCaches): Promise<void> {
     if (link.closest('.extreme-wikilinks-link')) {
       return;
     }
 
     const destination = getRenderedLinkDestination(link);
     const request = createWikilinkRenderRequest(context.sourcePath, destination, getRenderedLinkDisplayText(link, destination), { sourceLine });
-    const match = getWikilinkRenderMatch(this.app, settings, request, caches);
+    const match = getWikilinkRenderMatch(this.app, settings, request, caches, excludeRegexps);
     if (!match) {
       return;
     }

@@ -1,7 +1,7 @@
 {
   "id": "extreme-wikilinks",
   "name": "Extreme Wikilinks",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "minAppVersion": "1.8.0",
   "description": "Take your Wikilinks to the eXtreme! by using frontmatter to customize their appearance.",
   "author": "Bob Stanton",

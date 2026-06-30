@@ -1,6 +1,6 @@
 {
   "name": "extreme-wikilinks",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Take your Wikilinks to the eXtreme! By applying templates to change their appearance. EXTREME!",
   "main": "main.js",
   "scripts": {

@@ -7,7 +7,7 @@ import type { ExtremeWikilinksSettings } from './settings';
 import type { RenderedTemplateParts } from './templateEngine';
 import { hasBlockLevelOutput, renderTemplateMarkdown } from './templateOutputRenderer';
 import { recordTemplateFailure } from './logger';
-import { createExcludeMatcher, createRenderCaches, createWikilinkRenderRequest, findWikilinkTokens, formatOriginalWikilink, getRenderedParts, getWikilinkRenderMatch, isPathExcluded, serializeKey } from './wikilinkRender';
+import { createExcludeMatcher, createRenderCaches, createWikilinkRenderRequest, findWikilinkTokens, formatOriginalWikilink, getRenderedParts, getWikilinkRenderMatch, isPathExcluded, serializeKey, type ExcludeRegexps } from './wikilinkRender';
 
 export const refreshDecorationsEffect = StateEffect.define<void>();
 
@@ -81,7 +81,7 @@ export function createLivePreviewExtension(app: App, getSettings: () => ExtremeW
         }
 
         if (shouldRebuild) {
-          if (update.docChanged || livePreviewChanged) {
+          if (livePreviewChanged) {
             this.renders.clear();
             this.failedKeys.clear();
           }
@@ -93,14 +93,15 @@ export function createLivePreviewExtension(app: App, getSettings: () => ExtremeW
   );
 }
 
-function buildDecorations(app: App, getSettings: () => ExtremeWikilinksSettings, getExcludeRegexps: (settings: ExtremeWikilinksSettings) => RegExp[], view: EditorView, renders: Map<string, TrackedRender>, failedKeys: Set<string>): DecorationSet {
+function buildDecorations(app: App, getSettings: () => ExtremeWikilinksSettings, getExcludeRegexps: (settings: ExtremeWikilinksSettings) => ExcludeRegexps, view: EditorView, renders: Map<string, TrackedRender>, failedKeys: Set<string>): DecorationSet {
   if (!view.state.field(editorLivePreviewField)) {
     return Decoration.none;
   }
 
   const sourceFile = view.state.field(editorInfoField).file;
   const settings = getSettings();
-  if (!sourceFile || isPathExcluded(sourceFile.path, getExcludeRegexps(settings))) {
+  const excludeRegexps = getExcludeRegexps(settings);
+  if (!sourceFile || isPathExcluded(sourceFile.path, excludeRegexps.source)) {
     return Decoration.none;
   }
 
@@ -108,10 +109,10 @@ function buildDecorations(app: App, getSettings: () => ExtremeWikilinksSettings,
   const cursor = view.state.selection.main.head;
   const refresh = () => view.dispatch({ effects: refreshDecorationsEffect.of() });
 
-  for (const match of findWikilinks(app, settings, view, sourceFile.path)) {
+  for (const match of findWikilinks(app, settings, excludeRegexps, view, sourceFile.path)) {
     if (cursor >= match.from && cursor <= match.to) continue;
 
-    const key = renderStateKey(match);
+    const key = renderCacheKey(match);
     if (failedKeys.has(key)) continue;
 
     let tracked = renders.get(key);
@@ -206,11 +207,9 @@ class WikilinkTemplateWidget extends WidgetType {
   }
 }
 
-function renderStateKey(match: WikilinkMatch): string {
+function renderCacheKey(match: WikilinkMatch): string {
   return serializeKey([
     match.sourcePath,
-    match.from,
-    match.to,
     match.rawTarget,
     match.linkDisplayText ?? '',
     match.sourceHeading,
@@ -229,7 +228,7 @@ function recordRenderFailure(match: WikilinkMatch, error: unknown): void {
   });
 }
 
-function findWikilinks(app: App, settings: ExtremeWikilinksSettings, view: EditorView, sourcePath: string): WikilinkMatch[] {
+function findWikilinks(app: App, settings: ExtremeWikilinksSettings, excludeRegexps: ExcludeRegexps, view: EditorView, sourcePath: string): WikilinkMatch[] {
   const matches: WikilinkMatch[] = [];
   const caches = createRenderCaches();
   const headings = collectHeadings(view);
@@ -246,7 +245,7 @@ function findWikilinks(app: App, settings: ExtremeWikilinksSettings, view: Edito
 
       const sourceHeading = headingBefore(headings, linkFrom);
       const request = createWikilinkRenderRequest(sourcePath, rawTarget, linkDisplayText, { sourceHeading });
-      const renderMatch = getWikilinkRenderMatch(app, settings, request, caches);
+      const renderMatch = getWikilinkRenderMatch(app, settings, request, caches, excludeRegexps);
       if (!renderMatch) continue;
 
       matches.push({
