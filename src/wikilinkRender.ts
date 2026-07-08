@@ -76,12 +76,16 @@ export function createExcludeMatcher(): (settings: ExtremeWikilinksSettings) => 
     if (nextKey !== key) {
       key = nextKey;
       regexps = {
-        source: settings.excludePatterns.filter(({ matchSource }) => matchSource).map(({ pattern }) => compileRegex(pattern)),
-        target: settings.excludePatterns.filter(({ matchTarget }) => matchTarget).map(({ pattern }) => compileRegex(pattern)),
+        source: compileExcludePatterns(settings.excludePatterns.filter(({ matchSource }) => matchSource)),
+        target: compileExcludePatterns(settings.excludePatterns.filter(({ matchTarget }) => matchTarget)),
       };
     }
     return regexps;
   };
+}
+
+function compileExcludePatterns(patterns: ReadonlyArray<{ pattern: string }>): RegExp[] {
+  return patterns.map(({ pattern }) => compileRegex(pattern)).filter((regex): regex is RegExp => regex !== null);
 }
 
 export function serializeKey(parts: ReadonlyArray<string | number>): string {
@@ -177,8 +181,13 @@ export function formatOriginalWikilink(rawTarget: string, linkDisplayText: strin
 
 export function parseWikilinkTarget(raw: string): { target: string; linkDisplayText: string | null } {
   const pipeIndex = raw.indexOf('|');
-  const target = (pipeIndex === -1 ? raw : raw.substring(0, pipeIndex)).trim();
-  const linkDisplayText = pipeIndex === -1 ? null : raw.substring(pipeIndex + 1).trim();
+  if (pipeIndex === -1) {
+    return { target: raw.trim(), linkDisplayText: null };
+  }
+
+  const rawTarget = raw.substring(0, pipeIndex);
+  const target = (rawTarget.endsWith('\\') ? rawTarget.slice(0, -1) : rawTarget).trim();
+  const linkDisplayText = raw.substring(pipeIndex + 1).trim();
   return { target, linkDisplayText: linkDisplayText || null };
 }
 
@@ -189,9 +198,11 @@ export function findWikilinkTokens(text: string, baseOffset: number): WikilinkTo
   let match: RegExpExecArray | null;
 
   while ((match = regex.exec(text)) !== null) {
-    const from = baseOffset + match.index + match[1].length;
+    const linkStart = match.index + match[1].length;
+    const from = baseOffset + linkStart;
     const to = from + match[2].length + 4;
     if (from < previousTo) continue;
+    if (isEscaped(text, linkStart)) continue;
 
     const { target, linkDisplayText } = parseWikilinkTarget(match[2].trim());
     if (!target) continue;
@@ -201,6 +212,14 @@ export function findWikilinkTokens(text: string, baseOffset: number): WikilinkTo
   }
 
   return tokens;
+}
+
+function isEscaped(text: string, index: number): boolean {
+  let slashCount = 0;
+  for (let current = index - 1; current >= 0 && text[current] === '\\'; current -= 1) {
+    slashCount += 1;
+  }
+  return slashCount % 2 === 1;
 }
 
 function getLinkSubpath(linkDestination: string): string {

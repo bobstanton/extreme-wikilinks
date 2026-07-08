@@ -69,7 +69,11 @@ export class LinkRenderer {
 
 function getRenderedLinkDestination(link: HTMLAnchorElement): string {
   const linkText = link.getAttribute('data-href') ?? link.getAttribute('href') ?? '';
-  return decodeURIComponent(linkText).trim();
+  try {
+    return decodeURIComponent(linkText).trim();
+  } catch {
+    return linkText.trim();
+  }
 }
 
 function getRenderedLinkDisplayText(link: HTMLAnchorElement, destination: string): string | null {

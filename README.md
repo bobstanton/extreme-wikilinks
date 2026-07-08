@@ -2,7 +2,7 @@
 
 Take your Wikilinks to the eXtreme! by using frontmatter to customize their appearance. EXTREME!
 
-[Screencast_20260625_183949.webm](https://github.com/user-attachments/assets/e623fa1f-c1ac-461a-8078-35a5098b75b9)
+![Extreme Wikilinks demo](demo.gif)
 
 
 Using frontmatter such as:
@@ -23,8 +23,31 @@ With a template like:
 Will result in:
 
 ```text
-🍕 Alfredos Pizza Cafe
+🍕 [[Alfredos Pizza Cafe]]
 ```
+
+Or with frontmatter:
+
+```yaml
+---
+Distance: 1.57 mi
+icon: 🥨
+---
+```
+
+And template:
+
+```text
+{this.icon} [[{this.linkDestination}|{this.title} {this.Distance}]]
+```
+
+Results in:
+
+```text
+🥨 [[Pretzel Day Walk|Pretzel Day Walk 1.57 mi]]
+```
+
+Templates can be conditionally applied based on headings or target links.
 
 ## Templates
 

@@ -1,54 +1,46 @@
-.extreme-wikilinks-link {
-  display: inline;
-  text-decoration: none;
-}
-
 .extreme-wikilinks-link-rendering {
   visibility: hidden;
 }
 
-.extreme-wikilinks-linked-token {
-  text-decoration: var(--link-decoration);
-  overflow-wrap: anywhere;
-}
-
-.extreme-wikilinks-template textarea {
+.extreme-wikilinks-template-setting textarea {
   min-height: 4.5rem;
+  width: 100%;
 }
 
-.extreme-wikilinks-template-setting {
+.extreme-wikilinks-template-setting .setting-item-control {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.extreme-wikilinks-template-setting textarea.mod-warning {
+  border-color: var(--text-error);
+}
+
+.extreme-wikilinks-template-error {
+  margin-top: var(--size-2-2);
+  color: var(--text-error);
+  font-size: var(--font-ui-smaller);
+}
+
+.extreme-wikilinks-template-error:empty {
+  display: none;
+}
+
+body:not(.is-phone) .extreme-wikilinks-template-setting {
   align-items: flex-start;
   gap: 1rem;
 }
 
-.extreme-wikilinks-template-setting .setting-item-info {
+body:not(.is-phone) .extreme-wikilinks-template-setting .setting-item-info {
   flex: 0 0 10rem;
   padding-top: 0.25rem;
 }
 
-.extreme-wikilinks-template-setting .setting-item-control {
+body:not(.is-phone) .extreme-wikilinks-template-setting .setting-item-control {
   flex: 1 1 auto;
   min-width: 0;
 }
 
-.extreme-wikilinks-template-setting textarea {
-  width: 100%;
+body:not(.is-phone) .extreme-wikilinks-template-setting textarea {
   min-width: 18rem;
-}
-
-.extreme-wikilinks-exclude-pattern {
-  margin: 0.75rem 0;
-  padding: 0 1rem;
-  background: var(--background-secondary);
-  border-radius: var(--radius-m);
-}
-
-.extreme-wikilinks-exclude-pattern > .setting-item {
-  background: transparent;
-  border-radius: 0;
-  box-shadow: none;
-}
-
-.extreme-wikilinks-exclude-pattern > .setting-item:not(:last-child) {
-  border-bottom: 1px solid var(--background-modifier-border);
 }

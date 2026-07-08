@@ -2,7 +2,7 @@ import { EditorView } from '@codemirror/view';
 import { MarkdownView, Notice, Plugin, TFile } from 'obsidian';
 import { LinkRenderer } from './linkRenderer';
 import { ExtremeWikilinksSettingTab } from './SettingsTab';
-import { createLivePreviewExtension, refreshDecorationsEffect } from './livePreviewExtension';
+import { createLivePreviewExtension, invalidateRendersEffect } from './livePreviewExtension';
 import { DEFAULT_SETTINGS, normalizeSettings, type ExtremeWikilinksSettings } from './settings';
 import { logger } from './logger';
 
@@ -77,5 +77,5 @@ export default class ExtremeWikilinksPlugin extends Plugin {
 
 function refreshLivePreviewDecorations(view: MarkdownView): void {
   const editorView = (view.editor as unknown as { cm?: EditorView }).cm;
-  editorView?.dispatch({ effects: refreshDecorationsEffect.of() });
+  editorView?.dispatch({ effects: invalidateRendersEffect.of() });
 }

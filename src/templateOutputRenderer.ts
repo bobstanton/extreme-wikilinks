@@ -3,7 +3,6 @@ import type { RenderedTemplateParts } from './templateEngine';
 
 export async function renderTemplateMarkdown(app: App, parent: HTMLElement, parts: RenderedTemplateParts, sourcePath: string, component: Component): Promise<void> {
   await MarkdownRenderer.render(app, parts.markdown, parent, sourcePath, component);
-  parent.querySelectorAll<HTMLAnchorElement>('a.internal-link').forEach(link => link.addClass('extreme-wikilinks-linked-token'));
   parent.querySelectorAll(':scope > p').forEach(paragraph => unwrapParagraph(parent, paragraph));
 }
 

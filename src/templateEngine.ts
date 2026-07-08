@@ -48,6 +48,40 @@ export function templateRenderKey(template: LinkTemplate): string {
   return JSON.stringify([template.body, template.collapseSpaces]);
 }
 
+export async function validateTemplateSyntax(body: string): Promise<string | null> {
+  if (!body.trim()) return null;
+
+  const resolver = new PlaceholderResolver(new SimpleContextProvider(createForgivingContext()), {
+    formatArray: formatMarkdownArray,
+  });
+
+  let diagnostics;
+  try {
+    ({ diagnostics } = await resolver.resolveWithDetails(body));
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  const diagnostic = diagnostics[0];
+  if (!diagnostic) return null;
+
+  const target = diagnostic.expression !== undefined ? `{${diagnostic.expression}}` : diagnostic.placeholder;
+  return diagnostic.message ? `${diagnostic.message} in ${target}` : `Invalid template syntax near ${target}`;
+}
+
+function createForgivingContext(): Record<string, unknown> {
+  const forgiving: object = new Proxy(function forgivingTarget() { return undefined; }, {
+    get: (_target, key) => {
+      if (key === 'then') return undefined;
+      if (key === Symbol.toPrimitive) return () => '';
+      return forgiving;
+    },
+    apply: () => forgiving,
+    construct: () => forgiving,
+  });
+  return forgiving as Record<string, unknown>;
+}
+
 function formatMarkdownArray(values: readonly unknown[], escapeValue: (value: string) => string): string {
   return values
     .filter(value => value !== null && value !== undefined && value !== '')

@@ -9,13 +9,15 @@ import { hasBlockLevelOutput, renderTemplateMarkdown } from './templateOutputRen
 import { recordTemplateFailure } from './logger';
 import { createExcludeMatcher, createRenderCaches, createWikilinkRenderRequest, findWikilinkTokens, formatOriginalWikilink, getRenderedParts, getWikilinkRenderMatch, isPathExcluded, serializeKey, type ExcludeRegexps } from './wikilinkRender';
 
-export const refreshDecorationsEffect = StateEffect.define<void>();
+const refreshDecorationsEffect = StateEffect.define<void>();
+export const invalidateRendersEffect = StateEffect.define<void>();
 
 interface WikilinkMatch {
   readonly from: number;
   readonly to: number;
   readonly rawTarget: string;
   readonly linkDisplayText: string | null;
+  readonly formattingClasses: readonly string[];
   readonly sourceHeading: string;
   readonly sourcePath: string;
   readonly renderKey: string;
@@ -27,10 +29,11 @@ interface TrackedRender {
   readonly promise: Promise<RenderedTemplateParts>;
   status: 'pending' | 'resolved' | 'rejected';
   value?: RenderedTemplateParts;
+  stale?: boolean;
 }
 
 function trackRender(start: () => Promise<RenderedTemplateParts>): TrackedRender {
-  const tracked: { status: TrackedRender['status']; value?: RenderedTemplateParts } = { status: 'pending' };
+  const tracked: { status: TrackedRender['status']; value?: RenderedTemplateParts; stale?: boolean } = { status: 'pending' };
   const promise = start().then(
     value => {
       tracked.status = 'resolved';
@@ -66,7 +69,8 @@ export function createLivePreviewExtension(app: App, getSettings: () => ExtremeW
 
       update(update: ViewUpdate): void {
         const hasRefreshEffect = update.transactions.some(tr => tr.effects.some(effect => effect.is(refreshDecorationsEffect)));
-        let shouldRebuild = update.docChanged || update.viewportChanged || hasRefreshEffect;
+        const hasInvalidateEffect = update.transactions.some(tr => tr.effects.some(effect => effect.is(invalidateRendersEffect)));
+        let shouldRebuild = update.docChanged || update.viewportChanged || hasRefreshEffect || hasInvalidateEffect;
         const isLivePreview = update.view.state.field(editorLivePreviewField);
         const livePreviewChanged = isLivePreview !== this.isLivePreview;
         if (livePreviewChanged) {
@@ -83,6 +87,11 @@ export function createLivePreviewExtension(app: App, getSettings: () => ExtremeW
         if (shouldRebuild) {
           if (livePreviewChanged) {
             this.renders.clear();
+            this.failedKeys.clear();
+          } else if (hasInvalidateEffect) {
+            for (const tracked of this.renders.values()) {
+              tracked.stale = true;
+            }
             this.failedKeys.clear();
           }
           this.decorations = buildDecorations(app, getSettings, getExcludeRegexps, update.view, this.renders, this.failedKeys);
@@ -116,20 +125,25 @@ function buildDecorations(app: App, getSettings: () => ExtremeWikilinksSettings,
     if (failedKeys.has(key)) continue;
 
     let tracked = renders.get(key);
-    if (!tracked) {
-      tracked = trackRender(match.renderParts);
-      renders.set(key, tracked);
-      tracked.promise.then(refresh, error => {
+    if (!tracked || tracked.stale) {
+      const previousValue = tracked?.value;
+      const nextTracked = trackRender(match.renderParts);
+      
+      if (previousValue) nextTracked.value = previousValue;
+      renders.set(key, nextTracked);
+      nextTracked.promise.then(refresh, error => {
+        if (renders.get(key) !== nextTracked) return;
         recordRenderFailure(match, error);
         failedKeys.add(key);
         refresh();
       });
+      tracked = nextTracked;
     }
-    if (tracked.status !== 'resolved' || !tracked.value) continue;
+    if (!tracked.value) continue;
 
     builder.add(match.from, match.to, Decoration.replace({
-      widget: new WikilinkTemplateWidget(app, match, tracked.value, () => {
-        recordRenderFailure(match, 'Markdown renderer failed');
+      widget: new WikilinkTemplateWidget(app, match, tracked.value, (reason) => {
+        recordRenderFailure(match, reason);
         failedKeys.add(key);
         refresh();
       }),
@@ -144,12 +158,7 @@ class WikilinkTemplateWidget extends WidgetType {
   private renderComponent: Component | null = null;
   private destroyed = false;
 
-  constructor(
-    private readonly app: App,
-    private readonly match: WikilinkMatch,
-    private readonly parts: RenderedTemplateParts,
-    private readonly onRenderFailure: () => void,
-  ) {
+  constructor(private readonly app: App, private readonly match: WikilinkMatch, private readonly parts: RenderedTemplateParts, private readonly onRenderFailure: (reason: string) => void) {
     super();
   }
 
@@ -157,6 +166,9 @@ class WikilinkTemplateWidget extends WidgetType {
     const wrapper = view.dom.ownerDocument.createElement('span');
     wrapper.addClass('extreme-wikilinks-link');
     wrapper.addClass('extreme-wikilinks-link-rendering');
+    for (const formattingClass of this.match.formattingClasses) {
+      wrapper.addClass(formattingClass);
+    }
     wrapper.textContent = formatOriginalWikilink(this.match.rawTarget, this.match.linkDisplayText);
     void this.render(wrapper);
     return wrapper;
@@ -165,6 +177,7 @@ class WikilinkTemplateWidget extends WidgetType {
   eq(other: WikilinkTemplateWidget): boolean {
     return this.match.rawTarget === other.match.rawTarget
       && this.match.linkDisplayText === other.match.linkDisplayText
+      && this.match.formattingClasses.join(' ') === other.match.formattingClasses.join(' ')
       && this.match.sourceHeading === other.match.sourceHeading
       && this.match.sourcePath === other.match.sourcePath
       && this.match.renderKey === other.match.renderKey
@@ -184,7 +197,7 @@ class WikilinkTemplateWidget extends WidgetType {
       await renderTemplateMarkdown(this.app, rendered, this.parts, this.match.sourcePath, this.renderComponent);
       if (hasBlockLevelOutput(rendered)) {
         wrapper.removeClass('extreme-wikilinks-link-rendering');
-        this.onRenderFailure();
+        this.onRenderFailure('Template produced block-level output; only inline Markdown is supported');
         return;
       }
       if (this.destroyed) return;
@@ -196,7 +209,7 @@ class WikilinkTemplateWidget extends WidgetType {
       wrapper.removeClass('extreme-wikilinks-link-rendering');
     } catch {
       wrapper.removeClass('extreme-wikilinks-link-rendering');
-      this.onRenderFailure();
+      this.onRenderFailure('Markdown renderer failed');
     }
   }
 
@@ -241,7 +254,7 @@ function findWikilinks(app: App, settings: ExtremeWikilinksSettings, excludeRege
     for (const token of findWikilinkTokens(text, from)) {
       const { from: linkFrom, to: linkTo, rawTarget, linkDisplayText } = token;
       if (linkFrom < previousTo) continue;
-      if (isInCodeOrComment(view, linkFrom)) continue;
+      if (isInExcludedSyntax(view, linkFrom)) continue;
 
       const sourceHeading = headingBefore(headings, linkFrom);
       const request = createWikilinkRenderRequest(sourcePath, rawTarget, linkDisplayText, { sourceHeading });
@@ -253,6 +266,7 @@ function findWikilinks(app: App, settings: ExtremeWikilinksSettings, excludeRege
         to: linkTo,
         rawTarget,
         linkDisplayText,
+        formattingClasses: findFormattingClasses(view, linkFrom, linkTo),
         sourceHeading: renderMatch.sourceHeading,
         sourcePath,
         renderKey: renderMatch.renderKey,
@@ -266,12 +280,39 @@ function findWikilinks(app: App, settings: ExtremeWikilinksSettings, excludeRege
   return matches;
 }
 
-function isInCodeOrComment(view: EditorView, pos: number): boolean {
+const EXCLUDED_SYNTAX_NAMES = ['code', 'comment', 'math', 'frontmatter'];
+
+function isInExcludedSyntax(view: EditorView, pos: number): boolean {
   for (let node: SyntaxNode | null = syntaxTree(view.state).resolveInner(pos, 1); node; node = node.parent) {
     const name = node.type.name.toLowerCase();
-    if (name.includes('code') || name.includes('comment')) return true;
+    if (EXCLUDED_SYNTAX_NAMES.some(excluded => name.includes(excluded))) return true;
   }
   return false;
+}
+
+const FORMATTING_CLASSES: ReadonlyArray<readonly [nodeName: string, cssClass: string]> = [
+  ['em', 'cm-em'],
+  ['strong', 'cm-strong'],
+  ['strikethrough', 'cm-strikethrough'],
+  ['highlight', 'cm-highlight'],
+];
+
+function findFormattingClasses(view: EditorView, from: number, to: number): string[] {
+  const startNames = syntaxNameSegments(view, from + 2, 1);
+  const endNames = syntaxNameSegments(view, to - 2, -1);
+  return FORMATTING_CLASSES
+    .filter(([nodeName]) => startNames.has(nodeName) && endNames.has(nodeName))
+    .map(([, cssClass]) => cssClass);
+}
+
+function syntaxNameSegments(view: EditorView, pos: number, side: -1 | 1): Set<string> {
+  const segments = new Set<string>();
+  for (let node: SyntaxNode | null = syntaxTree(view.state).resolveInner(pos, side); node; node = node.parent) {
+    for (const segment of node.type.name.toLowerCase().split('_')) {
+      segments.add(segment);
+    }
+  }
+  return segments;
 }
 
 interface HeadingMark {
