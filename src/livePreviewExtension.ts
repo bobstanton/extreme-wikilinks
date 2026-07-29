@@ -5,7 +5,7 @@ import type { SyntaxNode } from '@lezer/common';
 import { App, Component, editorInfoField, editorLivePreviewField } from 'obsidian';
 import type { ExtremeWikilinksSettings } from './settings';
 import type { RenderedTemplateParts } from './templateEngine';
-import { hasBlockLevelOutput, renderTemplateMarkdown } from './templateOutputRenderer';
+import { applyTemplateName, hasBlockLevelOutput, renderTemplateMarkdown } from './templateOutputRenderer';
 import { recordTemplateFailure } from './logger';
 import { createExcludeMatcher, createRenderCaches, createWikilinkRenderRequest, findWikilinkTokens, formatOriginalWikilink, getRenderedParts, getWikilinkRenderMatch, isPathExcluded, serializeKey, type ExcludeRegexps } from './wikilinkRender';
 
@@ -21,6 +21,7 @@ interface WikilinkMatch {
   readonly sourceHeading: string;
   readonly sourcePath: string;
   readonly renderKey: string;
+  readonly templateId: string;
   readonly templateBody: string;
   readonly renderParts: () => Promise<RenderedTemplateParts>;
 }
@@ -162,13 +163,12 @@ class WikilinkTemplateWidget extends WidgetType {
     super();
   }
 
-  toDOM(view: EditorView): HTMLElement {
-    const wrapper = view.dom.ownerDocument.createElement('span');
-    wrapper.addClass('extreme-wikilinks-link');
-    wrapper.addClass('extreme-wikilinks-link-rendering');
+  toDOM(): HTMLElement {
+    const wrapper = createSpan({ cls: ['extreme-wikilinks-link', 'extreme-wikilinks-link-rendering'] });
     for (const formattingClass of this.match.formattingClasses) {
       wrapper.addClass(formattingClass);
     }
+    applyTemplateName(wrapper, this.match.templateId);
     wrapper.textContent = formatOriginalWikilink(this.match.rawTarget, this.match.linkDisplayText);
     void this.render(wrapper);
     return wrapper;
@@ -180,6 +180,7 @@ class WikilinkTemplateWidget extends WidgetType {
       && this.match.formattingClasses.join(' ') === other.match.formattingClasses.join(' ')
       && this.match.sourceHeading === other.match.sourceHeading
       && this.match.sourcePath === other.match.sourcePath
+      && this.match.templateId === other.match.templateId
       && this.match.renderKey === other.match.renderKey
       && this.parts.markdown === other.parts.markdown;
   }
@@ -192,8 +193,7 @@ class WikilinkTemplateWidget extends WidgetType {
     this.renderComponent = new Component();
     this.renderComponent.load();
     try {
-      const rendered = wrapper.ownerDocument.createElement('span');
-      rendered.addClass('extreme-wikilinks-link');
+      const rendered = createSpan({ cls: 'extreme-wikilinks-link' });
       await renderTemplateMarkdown(this.app, rendered, this.parts, this.match.sourcePath, this.renderComponent);
       if (hasBlockLevelOutput(rendered)) {
         wrapper.removeClass('extreme-wikilinks-link-rendering');
@@ -270,6 +270,7 @@ function findWikilinks(app: App, settings: ExtremeWikilinksSettings, excludeRege
         sourceHeading: renderMatch.sourceHeading,
         sourcePath,
         renderKey: renderMatch.renderKey,
+        templateId: renderMatch.template.id,
         templateBody: renderMatch.template.body,
         renderParts: () => getRenderedParts(app, renderMatch, caches.renderedParts),
       });

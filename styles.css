@@ -2,6 +2,27 @@
   visibility: hidden;
 }
 
+.extreme-wikilinks-faint {
+  color: var(--text-faint);
+  --link-color: var(--text-faint);
+  --link-color-hover: var(--text-normal);
+  --link-unresolved-color: var(--text-faint);
+  --link-unresolved-opacity: 1;
+  --link-external-color: var(--text-faint);
+  --link-external-color-hover: var(--text-normal);
+}
+
+.extreme-wikilinks-highlight {
+  background-color: var(--text-highlight-bg);
+  color: var(--text-normal);
+  --link-color: var(--text-normal);
+  --link-color-hover: var(--text-normal);
+  --link-unresolved-color: var(--text-normal);
+  --link-unresolved-opacity: 1;
+  --link-external-color: var(--text-normal);
+  --link-external-color-hover: var(--text-normal);
+}
+
 .extreme-wikilinks-template-setting textarea {
   min-height: 4.5rem;
   width: 100%;

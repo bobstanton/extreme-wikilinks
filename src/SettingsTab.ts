@@ -6,16 +6,32 @@ import type { HeadingMatchMode, LinkTemplate } from './settings';
 import { validateTemplateSyntax } from './templateEngine';
 
 export class ExtremeWikilinksSettingTab extends PluginSettingTab {
+  private isVisible = false;
+
   constructor(private readonly plugin: ExtremeWikilinksPlugin) {
     super(plugin.app, plugin);
   }
 
   display(): void {
+    this.isVisible = true;
     const { containerEl } = this;
     containerEl.empty();
 
     this.renderExcludePatterns(containerEl);
     this.renderTemplates(containerEl);
+  }
+
+  hide(): void {
+    this.isVisible = false;
+    this.plugin.flushPendingSave();
+    super.hide();
+  }
+
+  refresh(): void {
+    if (!this.isVisible) {
+      return;
+    }
+    this.display();
   }
 
   private renderExcludePatterns(containerEl: HTMLElement): void {
@@ -37,7 +53,7 @@ export class ExtremeWikilinksSettingTab extends PluginSettingTab {
 
             excludePattern.pattern = value;
             this.updateRegexInputState(text.inputEl, value);
-            void this.plugin.saveSettings();
+            this.plugin.saveSettingsSoon();
           });
         });
 
@@ -81,13 +97,13 @@ export class ExtremeWikilinksSettingTab extends PluginSettingTab {
           void this.plugin.saveSettings();
         }));
 
-      new Setting(itemsEl).setName('Template name').setDesc('Name shown in settings.')
+      new Setting(itemsEl).setName('Template name').setDesc('Name shown in settings. Also set on rendered links as data-extreme-wikilinks-template, so CSS snippets targeting the old name stop matching after a rename.')
         .addText((text) => {
           text.setValue(template.id);
           text.onChange((value) => {
             template.id = value.trim();
             heading.setName(template.id || `Template ${index + 1}`);
-            void this.plugin.saveSettings();
+            this.plugin.saveSettingsSoon();
           });
         });
 
@@ -136,8 +152,7 @@ export class ExtremeWikilinksSettingTab extends PluginSettingTab {
     new Setting(templateEl).setName('Template').setClass('extreme-wikilinks-template-setting')
       .addTextArea((text) => {
         text.setValue(template.body);
-        const errorEl = text.inputEl.ownerDocument.createElement('div');
-        errorEl.addClass('extreme-wikilinks-template-error');
+        const errorEl = createDiv({ cls: 'extreme-wikilinks-template-error' });
         text.inputEl.insertAdjacentElement('afterend', errorEl);
 
         const runValidation = (value: string) => {
@@ -152,7 +167,7 @@ export class ExtremeWikilinksSettingTab extends PluginSettingTab {
         runValidation(template.body);
         text.onChange((value) => {
           template.body = value;
-          void this.plugin.saveSettings();
+          this.plugin.saveSettingsSoon();
           runValidation(value);
         });
       });
@@ -167,7 +182,7 @@ export class ExtremeWikilinksSettingTab extends PluginSettingTab {
       headingInputEl.title = invalid ? 'Invalid regular expression' : '';
     };
 
-    new Setting(templateEl).setName('Source heading').setDesc('Heading above the link from Obsidian metadata, such as Food or Hikes. Leave blank to ignore.')
+    new Setting(templateEl).setName('Source heading').setDesc('Heading above the link from Obsidian metadata, such as food or hikes. Leave blank to ignore.')
       .addText((text) => {
         headingInputEl = text.inputEl;
         text.setValue(template.sourceHeading);
@@ -175,7 +190,7 @@ export class ExtremeWikilinksSettingTab extends PluginSettingTab {
         text.onChange((value) => {
           template.sourceHeading = value;
           updateInputState();
-          void this.plugin.saveSettings();
+          this.plugin.saveSettingsSoon();
         });
       });
 
@@ -191,7 +206,7 @@ export class ExtremeWikilinksSettingTab extends PluginSettingTab {
     new Setting(templateEl).setName(name).setDesc(description)
       .addText((text) => text.setValue(value).onChange((newValue) => {
         onChange(newValue);
-        void this.plugin.saveSettings();
+        this.plugin.saveSettingsSoon();
       }));
   }
 

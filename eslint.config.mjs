@@ -12,6 +12,9 @@ export default [
       parser: tsparser,
       globals: {
         window: 'readonly',
+        // Obsidian's DOM helpers, declared globally by obsidian.d.ts.
+        createDiv: 'readonly',
+        createSpan: 'readonly',
       },
       parserOptions: {
         project: "./tsconfig.json",

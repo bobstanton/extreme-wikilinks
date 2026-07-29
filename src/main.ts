@@ -1,5 +1,5 @@
 import { EditorView } from '@codemirror/view';
-import { MarkdownView, Notice, Plugin, TFile } from 'obsidian';
+import { debounce, MarkdownView, Notice, Plugin, TFile } from 'obsidian';
 import { LinkRenderer } from './linkRenderer';
 import { ExtremeWikilinksSettingTab } from './SettingsTab';
 import { createLivePreviewExtension, invalidateRendersEffect } from './livePreviewExtension';
@@ -9,6 +9,10 @@ import { logger } from './logger';
 export default class ExtremeWikilinksPlugin extends Plugin {
   settings: ExtremeWikilinksSettings = DEFAULT_SETTINGS;
   private linkRenderer: LinkRenderer | null = null;
+  private settingTab: ExtremeWikilinksSettingTab | null = null;
+  private pendingWrite: Promise<unknown> = Promise.resolve();
+
+  private readonly debouncedSave = debounce(() => void this.saveSettings(), 400, true);
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -37,17 +41,50 @@ export default class ExtremeWikilinksPlugin extends Plugin {
       },
     });
 
-    this.addSettingTab(new ExtremeWikilinksSettingTab(this));
+    this.settingTab = new ExtremeWikilinksSettingTab(this);
+    this.addSettingTab(this.settingTab);
+  }
+
+  onunload(): void {
+    this.debouncedSave.run();
+  }
+
+  async onExternalSettingsChange(): Promise<void> {
+    this.debouncedSave.cancel();
+    const incoming = await this.readSettings();
+    if (JSON.stringify(incoming) === JSON.stringify(this.settings)) {
+      return;
+    }
+
+    this.settings = incoming;
+    this.settingTab?.refresh();
+    this.refreshOpenMarkdownViews();
   }
 
   async loadSettings(): Promise<void> {
-    const savedData = await this.loadData() as Partial<ExtremeWikilinksSettings> | null;
-    this.settings = normalizeSettings(savedData ?? {});
+    this.settings = await this.readSettings();
+  }
+
+  saveSettingsSoon(): void {
+    this.debouncedSave();
+  }
+
+  flushPendingSave(): void {
+    this.debouncedSave.run();
   }
 
   async saveSettings(): Promise<void> {
-    await this.saveData(this.settings);
+    this.debouncedSave.cancel();
+    this.pendingWrite = this.pendingWrite
+      .catch(() => undefined)
+      .then(() => this.saveData(this.settings));
+    await this.pendingWrite;
     this.refreshOpenMarkdownViews();
+  }
+
+  private async readSettings(): Promise<ExtremeWikilinksSettings> {
+    const savedData = await this.loadData() as Partial<ExtremeWikilinksSettings> | null;
+    return normalizeSettings(savedData ?? {});
   }
 
   private refreshOpenMarkdownViews(changedFile?: TFile): void {

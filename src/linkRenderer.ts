@@ -1,6 +1,6 @@
 import { App, MarkdownPostProcessorContext, MarkdownRenderChild } from 'obsidian';
 import type { ExtremeWikilinksSettings } from './settings';
-import { renderTemplateMarkdown } from './templateOutputRenderer';
+import { applyTemplateName, renderTemplateMarkdown } from './templateOutputRenderer';
 import { recordTemplateFailure } from './logger';
 import { createExcludeMatcher, createRenderCaches, createWikilinkRenderRequest, getRenderedParts, getWikilinkRenderMatch, isPathExcluded, parseWikilinkTarget, type ExcludeRegexps, type WikilinkRenderCaches } from './wikilinkRender';
 
@@ -48,8 +48,8 @@ export class LinkRenderer {
         return;
       }
 
-      const wrapper = link.ownerDocument.createElement('span');
-      wrapper.addClass('extreme-wikilinks-link');
+      const wrapper = createSpan({ cls: 'extreme-wikilinks-link' });
+      applyTemplateName(wrapper, match.template.id);
       const child = new MarkdownRenderChild(wrapper);
       context.addChild(child);
       await renderTemplateMarkdown(this.app, wrapper, parts, context.sourcePath, child);

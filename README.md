@@ -76,3 +76,20 @@ Template expressions can use JavaScript:
 ```text
 {h.hasTag(this.tags, 'online-ordering') && this.Website ? this.Website : ''}
 ```
+
+## Styling
+
+Every rendered link is wrapped in a `span.extreme-wikilinks-link`, with a data attribute for the template name, custom CSS can style each template:
+
+```css
+[data-extreme-wikilinks-template="Archived"] {
+  --link-color: var(--text-muted);
+  --link-color-hover: var(--text-normal);
+}
+```
+
+And there are built in classes for `extreme-wikilinks-faint` and `extreme-wikilinks-highlight`:
+
+```text
+<span class="extreme-wikilinks-faint">{this.wikilink}</span>
+```

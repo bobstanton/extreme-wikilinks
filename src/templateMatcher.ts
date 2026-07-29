@@ -38,7 +38,26 @@ function matchesValue(value: unknown, expected: string): boolean {
     return value.some(item => matchesValue(item, expected));
   }
 
-  return value != null && String(value) === expected;
+  return toComparableString(value) === expected;
+}
+
+/*
+ * Frontmatter values can be nested maps, which have no meaningful string form.
+ * Stringifying them yields "[object Object]", so a configured value could never
+ * match one, and two unrelated objects would compare equal to each other. Only
+ * primitives are comparable to the value typed in settings.
+ */
+function toComparableString(value: unknown): string | null {
+  switch (typeof value) {
+    case 'string':
+      return value;
+    case 'number':
+    case 'boolean':
+    case 'bigint':
+      return String(value);
+    default:
+      return null;
+  }
 }
 
 function matchesHeading(actual: string, expected: string, mode: 'exact' | 'regex'): boolean {
