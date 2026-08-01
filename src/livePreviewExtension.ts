@@ -142,14 +142,15 @@ function buildDecorations(app: App, getSettings: () => ExtremeWikilinksSettings,
     }
     if (!tracked.value) continue;
 
-    builder.add(match.from, match.to, Decoration.replace({
+    builder.add(match.from, match.from, Decoration.widget({
       widget: new WikilinkTemplateWidget(app, match, tracked.value, (reason) => {
         recordRenderFailure(match, reason);
         failedKeys.add(key);
         refresh();
       }),
-      inclusive: false,
+      side: -1,
     }));
+    builder.add(match.from, match.to, Decoration.replace({ inclusive: false }));
   }
 
   return builder.finish();
@@ -169,7 +170,7 @@ class WikilinkTemplateWidget extends WidgetType {
       wrapper.addClass(formattingClass);
     }
     applyTemplateName(wrapper, this.match.templateId);
-    wrapper.textContent = formatOriginalWikilink(this.match.rawTarget, this.match.linkDisplayText);
+    wrapper.textContent = this.match.linkDisplayText ?? this.match.rawTarget;
     void this.render(wrapper);
     return wrapper;
   }

@@ -1,7 +1,3 @@
-.extreme-wikilinks-link-rendering {
-  visibility: hidden;
-}
-
 .extreme-wikilinks-faint {
   color: var(--text-faint);
   --link-color: var(--text-faint);
@@ -31,20 +27,6 @@
 .extreme-wikilinks-template-setting .setting-item-control {
   flex-direction: column;
   align-items: stretch;
-}
-
-.extreme-wikilinks-template-setting textarea.mod-warning {
-  border-color: var(--text-error);
-}
-
-.extreme-wikilinks-template-error {
-  margin-top: var(--size-2-2);
-  color: var(--text-error);
-  font-size: var(--font-ui-smaller);
-}
-
-.extreme-wikilinks-template-error:empty {
-  display: none;
 }
 
 body:not(.is-phone) .extreme-wikilinks-template-setting {
