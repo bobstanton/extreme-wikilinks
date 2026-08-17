@@ -142,7 +142,8 @@ function buildDecorations(app: App, getSettings: () => ExtremeWikilinksSettings,
     }
     if (!tracked.value) continue;
 
-    builder.add(match.from, match.from, Decoration.widget({
+    builder.add(match.from, match.to, Decoration.replace({ inclusive: false }));
+    builder.add(match.to, match.to, Decoration.widget({
       widget: new WikilinkTemplateWidget(app, match, tracked.value, (reason) => {
         recordRenderFailure(match, reason);
         failedKeys.add(key);
@@ -150,7 +151,6 @@ function buildDecorations(app: App, getSettings: () => ExtremeWikilinksSettings,
       }),
       side: -1,
     }));
-    builder.add(match.from, match.to, Decoration.replace({ inclusive: false }));
   }
 
   return builder.finish();

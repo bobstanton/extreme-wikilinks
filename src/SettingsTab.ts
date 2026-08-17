@@ -70,7 +70,7 @@ export class ExtremeWikilinksSettingTab extends PluginSettingTab {
     const { target, field } = resolved;
 
     if (field === 'id') {
-      target[field] = String(value ?? '').trim();
+      target[field] = (typeof value === 'string' ? value : '').trim();
       this.plugin.saveSettingsSoon();
       return;
     }
@@ -86,7 +86,7 @@ export class ExtremeWikilinksSettingTab extends PluginSettingTab {
       await this.plugin.saveSettings();
       return;
     }
-    target[field] = String(value ?? '');
+    target[field] = typeof value === 'string' ? value : '';
     this.plugin.saveSettingsSoon();
   }
 

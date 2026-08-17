@@ -193,22 +193,19 @@ export function parseWikilinkTarget(raw: string): { target: string; linkDisplayT
 
 export function findWikilinkTokens(text: string, baseOffset: number): WikilinkToken[] {
   const tokens: WikilinkToken[] = [];
-  const regex = /(^|[^!])\[\[([^\]\n]+)\]\]/g;
-  let previousTo = -1;
+  const regex = /\[\[([^\]\n]+)\]\]/g;
   let match: RegExpExecArray | null;
 
   while ((match = regex.exec(text)) !== null) {
-    const linkStart = match.index + match[1].length;
-    const from = baseOffset + linkStart;
-    const to = from + match[2].length + 4;
-    if (from < previousTo) continue;
+    const linkStart = match.index;
+    if (text[linkStart - 1] === '!') continue;
     if (isEscaped(text, linkStart)) continue;
 
-    const { target, linkDisplayText } = parseWikilinkTarget(match[2].trim());
+    const { target, linkDisplayText } = parseWikilinkTarget(match[1].trim());
     if (!target) continue;
 
-    tokens.push({ from, to, rawTarget: target, linkDisplayText });
-    previousTo = to;
+    const from = baseOffset + linkStart;
+    tokens.push({ from, to: from + match[0].length, rawTarget: target, linkDisplayText });
   }
 
   return tokens;
