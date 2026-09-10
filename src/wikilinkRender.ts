@@ -3,6 +3,7 @@ import { compileRegex } from './regexUtils';
 import type { ExtremeWikilinksSettings, LinkTemplate } from './settings';
 import { chooseTemplate } from './templateMatcher';
 import { renderTemplate, templateRenderKey, type RenderedTemplateParts, type TemplateContext } from './templateEngine';
+import { parseWikilinkDirective, type WikilinkDirective, type WikilinkDirectiveRange } from './wikilinkDirective';
 
 export interface WikilinkRenderMatch {
   readonly rawTarget: string;
@@ -23,6 +24,7 @@ export interface WikilinkRenderRequest {
   readonly sourcePath: string;
   readonly sourceLine?: number;
   readonly sourceHeading?: string;
+  readonly directive?: WikilinkDirective;
 }
 
 export interface WikilinkRenderCaches {
@@ -36,6 +38,7 @@ export interface WikilinkToken {
   readonly to: number;
   readonly rawTarget: string;
   readonly linkDisplayText: string | null;
+  readonly marker?: WikilinkDirectiveRange;
 }
 
 export interface ExcludeRegexps {
@@ -51,13 +54,14 @@ export function createRenderCaches(): WikilinkRenderCaches {
   };
 }
 
-export function createWikilinkRenderRequest(sourcePath: string, rawTarget: string, linkDisplayText: string | null, source: { sourceLine?: number; sourceHeading?: string } = {}): WikilinkRenderRequest {
+export function createWikilinkRenderRequest(sourcePath: string, rawTarget: string, linkDisplayText: string | null, source: { sourceLine?: number; sourceHeading?: string; directive?: WikilinkDirective } = {}): WikilinkRenderRequest {
   return {
     rawTarget,
     linkDisplayText,
     sourcePath,
     sourceLine: source.sourceLine,
     sourceHeading: source.sourceHeading,
+    directive: source.directive,
   };
 }
 
@@ -112,6 +116,7 @@ export function resolveExplicitTargetFile(app: App, path: string): TFile | null 
 }
 
 export function getWikilinkRenderMatch(app: App, settings: ExtremeWikilinksSettings, request: WikilinkRenderRequest, caches: WikilinkRenderCaches, excludeRegexps: ExcludeRegexps): WikilinkRenderMatch | null {
+  if (request.directive?.kind === 'skip') return null;
   const targetFile = getOrCompute(caches.targetFiles, request.rawTarget, () => resolveTargetFile(app, request.rawTarget, request.sourcePath));
   if (!targetFile) return null;
   if (isPathExcluded(targetFile.path, excludeRegexps.target)) return null;
@@ -128,10 +133,11 @@ export function getWikilinkRenderMatch(app: App, settings: ExtremeWikilinksSetti
     sourceHeading,
     request.sourcePath,
     caches.renderMatches,
+    request.directive?.templateName,
   );
 }
 
-export function createRenderMatch(app: App, templates: LinkTemplate[], targetFile: TFile, linkDestination: string, linkDisplayText: string, explicitLinkDisplayText: string | null, sourceHeading: string, sourcePath: string): WikilinkRenderMatch | null {
+export function createRenderMatch(app: App, templates: LinkTemplate[], targetFile: TFile, linkDestination: string, linkDisplayText: string, explicitLinkDisplayText: string | null, sourceHeading: string, sourcePath: string, templateName?: string): WikilinkRenderMatch | null {
   const frontmatter = app.metadataCache.getFileCache(targetFile)?.frontmatter ?? {};
   const templateContext: TemplateContext = {
     basename: targetFile.basename,
@@ -142,7 +148,7 @@ export function createRenderMatch(app: App, templates: LinkTemplate[], targetFil
     wikilink: app.fileManager.generateMarkdownLink(targetFile, sourcePath, getLinkSubpath(linkDestination), linkDisplayText),
     frontmatter,
   };
-  const template = chooseTemplate(templates, { sourceHeading, templateContext });
+  const template = chooseTemplate(templates, { sourceHeading, templateContext }, templateName);
   if (!template) return null;
 
   return {
@@ -159,9 +165,9 @@ export function createRenderMatch(app: App, templates: LinkTemplate[], targetFil
   };
 }
 
-export function getOrCreateRenderMatch(app: App, templates: LinkTemplate[], targetFile: TFile, linkDestination: string, linkDisplayText: string, explicitLinkDisplayText: string | null, sourceHeading: string, sourcePath: string, cache: Map<string, WikilinkRenderMatch | null>): WikilinkRenderMatch | null {
-  const key = renderKey(sourcePath, targetFile.path, renderKey(linkDestination, linkDisplayText), sourceHeading);
-  return getOrCompute(cache, key, () => createRenderMatch(app, templates, targetFile, linkDestination, linkDisplayText, explicitLinkDisplayText, sourceHeading, sourcePath));
+export function getOrCreateRenderMatch(app: App, templates: LinkTemplate[], targetFile: TFile, linkDestination: string, linkDisplayText: string, explicitLinkDisplayText: string | null, sourceHeading: string, sourcePath: string, cache: Map<string, WikilinkRenderMatch | null>, templateName?: string): WikilinkRenderMatch | null {
+  const key = renderKey(sourcePath, targetFile.path, renderKey(linkDestination, linkDisplayText), sourceHeading, templateName === undefined ? 'auto' : `template=${templateName}`);
+  return getOrCompute(cache, key, () => createRenderMatch(app, templates, targetFile, linkDestination, linkDisplayText, explicitLinkDisplayText, sourceHeading, sourcePath, templateName));
 }
 
 export function getRenderedParts(app: App, match: WikilinkRenderMatch, cache: Map<string, Promise<RenderedTemplateParts>>): Promise<RenderedTemplateParts> {
@@ -205,7 +211,11 @@ export function findWikilinkTokens(text: string, baseOffset: number): WikilinkTo
     if (!target) continue;
 
     const from = baseOffset + linkStart;
-    tokens.push({ from, to: from + match[0].length, rawTarget: target, linkDisplayText });
+    const marker = parseWikilinkDirective(text, regex.lastIndex);
+    tokens.push({
+      from, to: from + match[0].length, rawTarget: target, linkDisplayText,
+      marker: marker ? { ...marker, from: baseOffset + marker.from, to: baseOffset + marker.to } : undefined,
+    });
   }
 
   return tokens;

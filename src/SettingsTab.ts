@@ -124,6 +124,9 @@ export class ExtremeWikilinksSettingTab extends PluginSettingTab {
           desc: 'Use this pattern against resolved wikilink target notes.',
           control: { type: 'toggle', key: `excludePatterns:${index}:matchTarget` },
         },
+        this.deleteItem('Delete pattern', () => {
+          this.removeItem('excludePatterns', excludePattern);
+        }),
       ],
     };
   }
@@ -139,7 +142,7 @@ export class ExtremeWikilinksSettingTab extends PluginSettingTab {
         },
         {
           name: 'Template name',
-          desc: 'Name shown in settings. Also set on rendered links as data-extreme-wikilinks-template, so CSS snippets targeting the old name stop matching after a rename.',
+          desc: 'Use this exact name in %%ew:template=name%% after a wikilink. Renaming requires updating those directives and CSS snippets using data-extreme-wikilinks-template.',
           control: { type: 'text', key: `templates:${index}:id` },
         },
         {
@@ -175,8 +178,35 @@ export class ExtremeWikilinksSettingTab extends PluginSettingTab {
             options: { exact: 'Exact', regex: 'Regex' },
           },
         },
+        this.deleteItem('Delete template', () => {
+          this.removeItem('templates', template);
+        }),
       ],
     };
+  }
+
+  private deleteItem(name: string, onDelete: () => void): SettingGroupItem {
+    return {
+      name,
+      render: (setting) => {
+        setting.addButton((button) => {
+          button.setButtonText('Delete').setDestructive().onClick(() => {
+            setting.settingEl.closest('.setting-page')
+              ?.querySelector<HTMLElement>('.setting-page-back-button')?.click();
+            onDelete();
+          });
+        });
+      },
+    };
+  }
+
+  private removeItem(collection: 'excludePatterns' | 'templates', item: ExcludePattern | LinkTemplate): void {
+    const entries = this.plugin.settings[collection];
+    const index = entries.findIndex((entry) => entry === item);
+    if (index < 0) return;
+    entries.splice(index, 1);
+    void this.plugin.saveSettings();
+    this.update();
   }
 
   private templateBodyItem(template: LinkTemplate): SettingGroupItem {

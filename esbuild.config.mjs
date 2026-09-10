@@ -41,9 +41,25 @@ const context = await esbuild.context({
   outfile: "main.js",
 });
 
+const core = await esbuild.context({
+  banner: { js: banner },
+  entryPoints: ["src/core.ts"],
+  bundle: true,
+  external: ["obsidian", ...builtinModules, ...builtinModules.map(m => `node:${m}`)],
+  format: "esm",
+  target: "es2020",
+  logLevel: "info",
+  sourcemap: prod ? false : "inline",
+  treeShaking: true,
+  outfile: "core.mjs",
+});
+
 if (watchMode) {
+  await core.watch();
   await context.watch();
 } else {
+  await core.rebuild();
+  await core.dispose();
   await context.rebuild();
   process.exit(0);
 }

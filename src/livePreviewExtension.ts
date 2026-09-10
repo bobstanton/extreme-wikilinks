@@ -1,5 +1,5 @@
 import { syntaxTree } from '@codemirror/language';
-import { type Extension, RangeSetBuilder, StateEffect } from '@codemirror/state';
+import { type Extension, type Range, StateEffect } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from '@codemirror/view';
 import type { SyntaxNode } from '@lezer/common';
 import { App, Component, editorInfoField, editorLivePreviewField } from 'obsidian';
@@ -7,7 +7,7 @@ import type { ExtremeWikilinksSettings } from './settings';
 import type { RenderedTemplateParts } from './templateEngine';
 import { applyTemplateName, hasBlockLevelOutput, renderTemplateMarkdown } from './templateOutputRenderer';
 import { recordTemplateFailure } from './logger';
-import { createExcludeMatcher, createRenderCaches, createWikilinkRenderRequest, findWikilinkTokens, formatOriginalWikilink, getRenderedParts, getWikilinkRenderMatch, isPathExcluded, serializeKey, type ExcludeRegexps } from './wikilinkRender';
+import { createExcludeMatcher, createRenderCaches, createWikilinkRenderRequest, findWikilinkTokens, formatOriginalWikilink, getRenderedParts, getWikilinkRenderMatch, isPathExcluded, serializeKey, type ExcludeRegexps, type WikilinkToken } from './wikilinkRender';
 
 const refreshDecorationsEffect = StateEffect.define<void>();
 export const invalidateRendersEffect = StateEffect.define<void>();
@@ -55,13 +55,11 @@ export function createLivePreviewExtension(app: App, getSettings: () => ExtremeW
   return ViewPlugin.fromClass(
     class {
       decorations: DecorationSet;
-      cursorWikilinkRange: string;
       isLivePreview: boolean;
       renders: Map<string, TrackedRender>;
       failedKeys: Set<string>;
 
       constructor(view: EditorView) {
-        this.cursorWikilinkRange = getCursorWikilinkRange(view);
         this.isLivePreview = view.state.field(editorLivePreviewField);
         this.renders = new Map();
         this.failedKeys = new Set();
@@ -71,18 +69,12 @@ export function createLivePreviewExtension(app: App, getSettings: () => ExtremeW
       update(update: ViewUpdate): void {
         const hasRefreshEffect = update.transactions.some(tr => tr.effects.some(effect => effect.is(refreshDecorationsEffect)));
         const hasInvalidateEffect = update.transactions.some(tr => tr.effects.some(effect => effect.is(invalidateRendersEffect)));
-        let shouldRebuild = update.docChanged || update.viewportChanged || hasRefreshEffect || hasInvalidateEffect;
+        let shouldRebuild = update.docChanged || update.viewportChanged || update.selectionSet || hasRefreshEffect || hasInvalidateEffect;
         const isLivePreview = update.view.state.field(editorLivePreviewField);
         const livePreviewChanged = isLivePreview !== this.isLivePreview;
         if (livePreviewChanged) {
           shouldRebuild = true;
           this.isLivePreview = isLivePreview;
-        }
-
-        if (update.selectionSet) {
-          const cursorWikilinkRange = getCursorWikilinkRange(update.view);
-          shouldRebuild ||= cursorWikilinkRange !== this.cursorWikilinkRange;
-          this.cursorWikilinkRange = cursorWikilinkRange;
         }
 
         if (shouldRebuild) {
@@ -111,16 +103,44 @@ function buildDecorations(app: App, getSettings: () => ExtremeWikilinksSettings,
   const sourceFile = view.state.field(editorInfoField).file;
   const settings = getSettings();
   const excludeRegexps = getExcludeRegexps(settings);
-  if (!sourceFile || isPathExcluded(sourceFile.path, excludeRegexps.source)) {
+  if (!sourceFile) {
     return Decoration.none;
   }
 
-  const builder = new RangeSetBuilder<Decoration>();
-  const cursor = view.state.selection.main.head;
+  const decorations: Range<Decoration>[] = [];
+  const caches = createRenderCaches();
+  const headings = collectHeadings(view);
+  const sourceExcluded = isPathExcluded(sourceFile.path, excludeRegexps.source);
   const refresh = () => view.dispatch({ effects: refreshDecorationsEffect.of() });
 
-  for (const match of findWikilinks(app, settings, excludeRegexps, view, sourceFile.path)) {
-    if (cursor >= match.from && cursor <= match.to) continue;
+  for (const token of findVisibleWikilinks(view)) {
+    const end = token.marker?.to ?? token.to;
+    if (view.state.selection.ranges.some(range => range.from <= end && range.to >= token.from)) continue;
+
+    if (token.marker) {
+      decorations.push(Decoration.replace({ inclusive: false }).range(token.marker.from, token.marker.to));
+    }
+    if (sourceExcluded) continue;
+
+    const request = createWikilinkRenderRequest(sourceFile.path, token.rawTarget, token.linkDisplayText, {
+      sourceHeading: headingBefore(headings, token.from),
+      directive: token.marker?.directive,
+    });
+    const renderMatch = getWikilinkRenderMatch(app, settings, request, caches, excludeRegexps);
+    if (!renderMatch) continue;
+    const match: WikilinkMatch = {
+      from: token.from,
+      to: token.to,
+      rawTarget: token.rawTarget,
+      linkDisplayText: token.linkDisplayText,
+      formattingClasses: findFormattingClasses(view, token.from, token.to),
+      sourceHeading: renderMatch.sourceHeading,
+      sourcePath: sourceFile.path,
+      renderKey: renderMatch.renderKey,
+      templateId: renderMatch.template.id,
+      templateBody: renderMatch.template.body,
+      renderParts: () => getRenderedParts(app, renderMatch, caches.renderedParts),
+    };
 
     const key = renderCacheKey(match);
     if (failedKeys.has(key)) continue;
@@ -142,18 +162,18 @@ function buildDecorations(app: App, getSettings: () => ExtremeWikilinksSettings,
     }
     if (!tracked.value) continue;
 
-    builder.add(match.from, match.to, Decoration.replace({ inclusive: false }));
-    builder.add(match.to, match.to, Decoration.widget({
+    decorations.push(Decoration.replace({ inclusive: false }).range(match.from, match.to));
+    decorations.push(Decoration.widget({
       widget: new WikilinkTemplateWidget(app, match, tracked.value, (reason) => {
         recordRenderFailure(match, reason);
         failedKeys.add(key);
         refresh();
       }),
       side: -1,
-    }));
+    }).range(match.to));
   }
 
-  return builder.finish();
+  return Decoration.set(decorations, true);
 }
 
 class WikilinkTemplateWidget extends WidgetType {
@@ -242,10 +262,8 @@ function recordRenderFailure(match: WikilinkMatch, error: unknown): void {
   });
 }
 
-function findWikilinks(app: App, settings: ExtremeWikilinksSettings, excludeRegexps: ExcludeRegexps, view: EditorView, sourcePath: string): WikilinkMatch[] {
-  const matches: WikilinkMatch[] = [];
-  const caches = createRenderCaches();
-  const headings = collectHeadings(view);
+function findVisibleWikilinks(view: EditorView): WikilinkToken[] {
+  const matches: WikilinkToken[] = [];
   let previousTo = -1;
 
   for (const range of view.visibleRanges) {
@@ -253,28 +271,11 @@ function findWikilinks(app: App, settings: ExtremeWikilinksSettings, excludeRege
     const to = view.state.doc.lineAt(range.to).to;
     const text = view.state.doc.sliceString(from, to);
     for (const token of findWikilinkTokens(text, from)) {
-      const { from: linkFrom, to: linkTo, rawTarget, linkDisplayText } = token;
+      const { from: linkFrom, to: linkTo } = token;
       if (linkFrom < previousTo) continue;
       if (isInExcludedSyntax(view, linkFrom)) continue;
 
-      const sourceHeading = headingBefore(headings, linkFrom);
-      const request = createWikilinkRenderRequest(sourcePath, rawTarget, linkDisplayText, { sourceHeading });
-      const renderMatch = getWikilinkRenderMatch(app, settings, request, caches, excludeRegexps);
-      if (!renderMatch) continue;
-
-      matches.push({
-        from: linkFrom,
-        to: linkTo,
-        rawTarget,
-        linkDisplayText,
-        formattingClasses: findFormattingClasses(view, linkFrom, linkTo),
-        sourceHeading: renderMatch.sourceHeading,
-        sourcePath,
-        renderKey: renderMatch.renderKey,
-        templateId: renderMatch.template.id,
-        templateBody: renderMatch.template.body,
-        renderParts: () => getRenderedParts(app, renderMatch, caches.renderedParts),
-      });
+      matches.push(token);
       previousTo = linkTo;
     }
   }
@@ -349,15 +350,4 @@ function headingBefore(headings: HeadingMark[], pos: number): string {
     result = heading.text;
   }
   return result;
-}
-
-function getCursorWikilinkRange(view: EditorView): string {
-  const cursor = view.state.selection.main.head;
-  const line = view.state.doc.lineAt(cursor);
-
-  for (const token of findWikilinkTokens(line.text, line.from)) {
-    if (cursor >= token.from && cursor <= token.to) return `${token.from}:${token.to}`;
-  }
-
-  return '';
 }

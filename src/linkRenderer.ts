@@ -2,7 +2,10 @@ import { App, MarkdownPostProcessorContext, MarkdownRenderChild } from 'obsidian
 import type { ExtremeWikilinksSettings } from './settings';
 import { applyTemplateName, renderTemplateMarkdown } from './templateOutputRenderer';
 import { recordTemplateFailure } from './logger';
-import { createExcludeMatcher, createRenderCaches, createWikilinkRenderRequest, getRenderedParts, getWikilinkRenderMatch, isPathExcluded, parseWikilinkTarget, type ExcludeRegexps, type WikilinkRenderCaches } from './wikilinkRender';
+import { createExcludeMatcher, createRenderCaches, createWikilinkRenderRequest, getRenderedParts, getWikilinkRenderMatch, isPathExcluded, parseWikilinkTarget, resolveExplicitTargetFile, type ExcludeRegexps, type WikilinkRenderCaches } from './wikilinkRender';
+import { findLinkDirectives, normalizeLinkDestination, type WikilinkDirective } from './wikilinkDirective';
+
+const ORIGINAL_DESTINATION_ATTRIBUTE = 'data-extreme-wikilinks-original-destination';
 
 export class LinkRenderer {
   private readonly getExcludeRegexps = createExcludeMatcher();
@@ -26,17 +29,28 @@ export class LinkRenderer {
     }
 
     const caches = createRenderCaches();
-    const links = Array.from(root.querySelectorAll<HTMLAnchorElement>('a.internal-link'));
-    await Promise.all(links.map(link => this.processLink(link, context, settings, excludeRegexps, sectionInfo.lineStart, caches)));
+    const embed = root.closest('.internal-embed');
+    const links = Array.from(root.querySelectorAll<HTMLElement>(`a.internal-link, [${ORIGINAL_DESTINATION_ATTRIBUTE}]`))
+      .filter(link => {
+        const wrapper = link.closest('.extreme-wikilinks-link');
+        return (!wrapper || wrapper === link) && link.closest('.internal-embed') === embed;
+      });
+    const sourceFile = resolveExplicitTargetFile(this.app, context.sourcePath);
+    const sourceCache = sourceFile ? this.app.metadataCache.getFileCache(sourceFile) : null;
+    const destinations = links.map(link => link.getAttribute(ORIGINAL_DESTINATION_ATTRIBUTE) ?? getRenderedLinkDestination(link));
+    const directives = findLinkDirectives(destinations, sectionInfo, sourceCache?.links ?? [], sourceCache?.sections ?? []);
+    const linksToRender = links.map((link, index) => ({ link, directive: directives.get(index) }))
+      .filter(({ link, directive }) => directive?.kind !== 'skip' && !link.hasAttribute(ORIGINAL_DESTINATION_ATTRIBUTE));
+    await Promise.all(linksToRender.map(({ link, directive }) => this.processLink(link as HTMLAnchorElement, context, settings, excludeRegexps, sectionInfo.lineStart, caches, directive)));
   }
 
-  private async processLink(link: HTMLAnchorElement, context: MarkdownPostProcessorContext, settings: ExtremeWikilinksSettings, excludeRegexps: ExcludeRegexps, sourceLine: number, caches: WikilinkRenderCaches): Promise<void> {
+  private async processLink(link: HTMLAnchorElement, context: MarkdownPostProcessorContext, settings: ExtremeWikilinksSettings, excludeRegexps: ExcludeRegexps, sourceLine: number, caches: WikilinkRenderCaches, directive?: WikilinkDirective): Promise<void> {
     if (link.closest('.extreme-wikilinks-link')) {
       return;
     }
 
     const destination = getRenderedLinkDestination(link);
-    const request = createWikilinkRenderRequest(context.sourcePath, destination, getRenderedLinkDisplayText(link, destination), { sourceLine });
+    const request = createWikilinkRenderRequest(context.sourcePath, destination, getRenderedLinkDisplayText(link, destination), { sourceLine, directive });
     const match = getWikilinkRenderMatch(this.app, settings, request, caches, excludeRegexps);
     if (!match) {
       return;
@@ -49,6 +63,7 @@ export class LinkRenderer {
       }
 
       const wrapper = createSpan({ cls: 'extreme-wikilinks-link' });
+      wrapper.setAttribute(ORIGINAL_DESTINATION_ATTRIBUTE, destination);
       applyTemplateName(wrapper, match.template.id);
       const child = new MarkdownRenderChild(wrapper);
       context.addChild(child);
@@ -67,13 +82,9 @@ export class LinkRenderer {
   }
 }
 
-function getRenderedLinkDestination(link: HTMLAnchorElement): string {
+function getRenderedLinkDestination(link: HTMLElement): string {
   const linkText = link.getAttribute('data-href') ?? link.getAttribute('href') ?? '';
-  try {
-    return decodeURIComponent(linkText).trim();
-  } catch {
-    return linkText.trim();
-  }
+  return normalizeLinkDestination(linkText);
 }
 
 function getRenderedLinkDisplayText(link: HTMLAnchorElement, destination: string): string | null {

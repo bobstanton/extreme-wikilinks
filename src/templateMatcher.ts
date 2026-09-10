@@ -8,7 +8,11 @@ export interface TemplateMatchContext {
   readonly templateContext: TemplateContext;
 }
 
-export function chooseTemplate(templates: LinkTemplate[], context: TemplateMatchContext): LinkTemplate | null {
+export function chooseTemplate(templates: LinkTemplate[], context: TemplateMatchContext, templateName?: string): LinkTemplate | null {
+  if (templateName !== undefined) {
+    const named = templates.filter(template => template.id.trim() === templateName);
+    return named.length === 1 && named[0].enabled ? named[0] : null;
+  }
   return templates.find(template => template.enabled && templateMatches(template, context)) ?? null;
 }
 

@@ -49,6 +49,27 @@ Results in:
 
 Templates can be conditionally applied based on headings or target links.
 
+## Skip an individual link
+
+Add `%%ew:skip%%` immediately after a wikilink to skip extreme processing:
+
+```text
+[[Alfredos Pizza Cafe]]%%ew:skip%%
+[[Alfredos Pizza Cafe|Pizza]]%%ew:skip%%
+[[Alfredos Pizza Cafe#Menu|Menu]]%%ew:skip%%
+```
+
+## Choose a template for an individual link
+
+Add `%%ew:template=compact%%` immediately after a wikilink to use the enabled template named `compact`, regardless of its conditions or position in the template list:
+
+```text
+[[Alfredos Pizza Cafe]]%%ew:template=compact%%
+[[Alfredos Pizza Cafe#Menu|Dinner]]%%ew:template=compact%%
+```
+
+Names are case-sensitive. Missing, disabled, or duplicate names leave the ordinary wikilink. Exclude patterns still apply. 
+
 ## Templates
 
 Templates are managed in plugin settings.
@@ -58,6 +79,8 @@ Built-in values:
 - `{this.title}` - linked file basename
 - `{this.basename}` - linked file basename
 - `{this.path}` - linked file path
+- `{this.tags}` - linked file frontmatter tags, without the leading `#`
+- `{this.bodyTags}` - tags written in the linked file's body, without the leading `#`
 - `{this.wikilink}` - Wikilink to the original link destination using the original display text
 - `{this.linkDestination}` - original link destination, including headings or block anchors
 - `{this.linkDisplayText}` - original link display text, such as `Pizza` from `[[Alfredos Pizza Cafe|Pizza]]`
