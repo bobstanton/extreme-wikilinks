@@ -1,8 +1,9 @@
-import { App, TFile, parseLinktext } from 'obsidian';
-import { compileRegex } from './regexUtils';
+import { App, TFile, parseFrontMatterEntry, parseLinktext } from 'obsidian';
+import { formatOriginalWikilink, isPathExcluded, serializeKey, type ExcludeRegexps } from './wikilinkCore';
 import type { ExtremeWikilinksSettings, LinkTemplate } from './settings';
 import { chooseTemplate } from './templateMatcher';
-import { renderTemplate, templateRenderKey, type RenderedTemplateParts, type TemplateContext } from './templateEngine';
+import { renderTemplate, templateRenderKey, type RenderedTemplateParts } from './templateEngine';
+import type { TemplateContext } from './templateContext';
 import { parseWikilinkDirective, type WikilinkDirective, type WikilinkDirectiveRange } from './wikilinkDirective';
 
 export interface WikilinkRenderMatch {
@@ -41,11 +42,6 @@ export interface WikilinkToken {
   readonly marker?: WikilinkDirectiveRange;
 }
 
-export interface ExcludeRegexps {
-  readonly source: RegExp[];
-  readonly target: RegExp[];
-}
-
 export function createRenderCaches(): WikilinkRenderCaches {
   return {
     targetFiles: new Map(),
@@ -72,36 +68,8 @@ export function getOrCompute<K, V>(cache: Map<K, V>, key: K, compute: () => V): 
   return cache.get(key) as V;
 }
 
-export function createExcludeMatcher(): (settings: ExtremeWikilinksSettings) => ExcludeRegexps {
-  let key: string | null = null;
-  let regexps: ExcludeRegexps = { source: [], target: [] };
-  return (settings) => {
-    const nextKey = JSON.stringify(settings.excludePatterns);
-    if (nextKey !== key) {
-      key = nextKey;
-      regexps = {
-        source: compileExcludePatterns(settings.excludePatterns.filter(({ matchSource }) => matchSource)),
-        target: compileExcludePatterns(settings.excludePatterns.filter(({ matchTarget }) => matchTarget)),
-      };
-    }
-    return regexps;
-  };
-}
-
-function compileExcludePatterns(patterns: ReadonlyArray<{ pattern: string }>): RegExp[] {
-  return patterns.map(({ pattern }) => compileRegex(pattern)).filter((regex): regex is RegExp => regex !== null);
-}
-
-export function serializeKey(parts: ReadonlyArray<string | number>): string {
-  return parts.map(value => `${String(value).length}:${value}`).join('|');
-}
-
 function renderKey(...parts: string[]): string {
   return serializeKey(parts);
-}
-
-export function isPathExcluded(sourcePath: string, excludeRegexps: RegExp[]): boolean {
-  return excludeRegexps.some(pattern => pattern.test(sourcePath));
 }
 
 export function resolveTargetFile(app: App, target: string, sourcePath: string): TFile | null {
@@ -137,18 +105,21 @@ export function getWikilinkRenderMatch(app: App, settings: ExtremeWikilinksSetti
   );
 }
 
-export function createRenderMatch(app: App, templates: LinkTemplate[], targetFile: TFile, linkDestination: string, linkDisplayText: string, explicitLinkDisplayText: string | null, sourceHeading: string, sourcePath: string, templateName?: string): WikilinkRenderMatch | null {
-  const frontmatter = app.metadataCache.getFileCache(targetFile)?.frontmatter ?? {};
-  const templateContext: TemplateContext = {
+export function createTemplateContext(app: App, targetFile: TFile, linkDestination: string, linkDisplayText: string, sourcePath: string): TemplateContext {
+  return {
     basename: targetFile.basename,
     linkDestination,
     linkDisplayText,
     path: targetFile.path,
     title: targetFile.basename,
     wikilink: app.fileManager.generateMarkdownLink(targetFile, sourcePath, getLinkSubpath(linkDestination), linkDisplayText),
-    frontmatter,
+    frontmatter: app.metadataCache.getFileCache(targetFile)?.frontmatter ?? {},
   };
-  const template = chooseTemplate(templates, { sourceHeading, templateContext }, templateName);
+}
+
+export function createRenderMatch(app: App, templates: LinkTemplate[], targetFile: TFile, linkDestination: string, linkDisplayText: string, explicitLinkDisplayText: string | null, sourceHeading: string, sourcePath: string, templateName?: string): WikilinkRenderMatch | null {
+  const templateContext = createTemplateContext(app, targetFile, linkDestination, linkDisplayText, sourcePath);
+  const template = chooseTemplate(templates, { sourceHeading, templateContext, readFrontmatter: parseFrontMatterEntry }, templateName);
   if (!template) return null;
 
   return {
@@ -179,10 +150,6 @@ export function getRenderedParts(app: App, match: WikilinkRenderMatch, cache: Ma
     templateRenderKey(match.template),
   );
   return getOrCompute(cache, key, () => renderTemplate(app, match.targetFile, match.template, match.templateContext, match.template.collapseSpaces));
-}
-
-export function formatOriginalWikilink(rawTarget: string, linkDisplayText: string | null): string {
-  return linkDisplayText ? `[[${rawTarget}|${linkDisplayText}]]` : `[[${rawTarget}]]`;
 }
 
 export function parseWikilinkTarget(raw: string): { target: string; linkDisplayText: string | null } {
@@ -235,14 +202,17 @@ function getLinkSubpath(linkDestination: string): string {
 
 function findSourceHeadingBefore(app: App, sourcePath: string, request: WikilinkRenderRequest): string {
   if (request.sourceLine === undefined) return '';
+  return findHeadingBeforeLine(app, sourcePath, request.sourceLine);
+}
 
+export function findHeadingBeforeLine(app: App, sourcePath: string, line: number): string {
   const sourceFile = app.vault.getAbstractFileByPath(sourcePath);
   if (!(sourceFile instanceof TFile)) return '';
 
   const headings = app.metadataCache.getFileCache(sourceFile)?.headings ?? [];
   let result = '';
   for (const heading of headings) {
-    if (heading.position.start.line >= request.sourceLine) break;
+    if (heading.position.start.line >= line) break;
     result = heading.heading;
   }
   return result;

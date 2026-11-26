@@ -2,11 +2,15 @@ import { PluginSettingTab } from 'obsidian';
 import type { SettingDefinitionItem, SettingDefinitionPage, SettingGroupItem } from 'obsidian';
 import type ExtremeWikilinksPlugin from './main';
 import { isValidRegex } from './regexUtils';
-import { createExcludePattern } from './settings';
+import { createExcludePattern, createTemplate } from './settings';
 import type { ExcludePattern, LinkTemplate } from './settings';
 import { validateTemplateSyntax } from './templateEngine';
+import { createTemplateEditor } from './templateEditor';
+import type { EditorView } from '@codemirror/view';
 
 export class ExtremeWikilinksSettingTab extends PluginSettingTab {
+  private editors: EditorView[] = [];
+
   constructor(private readonly plugin: ExtremeWikilinksPlugin) {
     super(plugin.app, plugin);
   }
@@ -92,6 +96,8 @@ export class ExtremeWikilinksSettingTab extends PluginSettingTab {
 
   hide(): void {
     this.plugin.flushPendingSave();
+    for (const editor of this.editors) editor.destroy();
+    this.editors = [];
     super.hide();
   }
 
@@ -116,12 +122,10 @@ export class ExtremeWikilinksSettingTab extends PluginSettingTab {
         },
         {
           name: 'Apply to notes containing links',
-          desc: 'Use this pattern against notes that contain wikilinks.',
           control: { type: 'toggle', key: `excludePatterns:${index}:matchSource` },
         },
         {
           name: 'Apply to note targets',
-          desc: 'Use this pattern against resolved wikilink target notes.',
           control: { type: 'toggle', key: `excludePatterns:${index}:matchTarget` },
         },
         this.deleteItem('Delete pattern', () => {
@@ -142,7 +146,7 @@ export class ExtremeWikilinksSettingTab extends PluginSettingTab {
         },
         {
           name: 'Template name',
-          desc: 'Use this exact name in %%ew:template=name%% after a wikilink. Renaming requires updating those directives and CSS snippets using data-extreme-wikilinks-template.',
+          desc: 'Renaming requires updating %%ew:template=name%% directives and CSS snippets using data-extreme-wikilinks-template.',
           control: { type: 'text', key: `templates:${index}:id` },
         },
         {
@@ -153,17 +157,14 @@ export class ExtremeWikilinksSettingTab extends PluginSettingTab {
         this.templateBodyItem(template),
         {
           name: 'Linked file property',
-          desc: 'Frontmatter property on the linked file, such as type or status. Leave blank to ignore.',
           control: { type: 'text', key: `templates:${index}:targetProperty` },
         },
         {
           name: 'Linked file value',
-          desc: 'Exact value to match. Leave blank to match any non-empty value.',
           control: { type: 'text', key: `templates:${index}:targetValue` },
         },
         {
           name: 'Source heading',
-          desc: 'Heading above the link from Obsidian metadata, such as food or hikes. Leave blank to ignore.',
           control: {
             type: 'text',
             key: `templates:${index}:sourceHeading`,
@@ -212,26 +213,26 @@ export class ExtremeWikilinksSettingTab extends PluginSettingTab {
   private templateBodyItem(template: LinkTemplate): SettingGroupItem {
     return {
       name: 'Template',
-      desc: 'Templates are evaluated in order. A template with no conditions acts as a fallback. Templates replace an inline link, so use inline Markdown. Use {this.wikilink} for a Wikilink to the original link destination with the original display text. Linked file frontmatter is available as {this.propertyName}. For names with spaces, use bracket syntax: {this[\'Property With Spaces\']}.',
       render: (setting) => {
         setting.setClass('extreme-wikilinks-template-setting');
-        setting.addTextArea((text) => {
-          text.setValue(template.body);
+        const runValidation = (value: string) => {
+          void validateTemplateSyntax(value).then((error) => {
+            if (template.body !== value) return;
+            setting.setErrorMessage(error);
+          });
+        };
 
-          const runValidation = (value: string) => {
-            void validateTemplateSyntax(value).then((error) => {
-              if (text.inputEl.value !== value) return;
-              setting.setErrorMessage(error);
-            });
-          };
-
-          runValidation(template.body);
-          text.onChange((value) => {
+        this.editors.push(createTemplateEditor({
+          parent: setting.controlEl.createDiv({ cls: 'extreme-wikilinks-template-editor' }),
+          value: template.body,
+          label: 'Template',
+          onChange: (value) => {
             template.body = value;
             this.plugin.saveSettingsSoon();
             runValidation(value);
-          });
-        });
+          },
+        }));
+        runValidation(template.body);
       },
     };
   }
@@ -244,19 +245,6 @@ export class ExtremeWikilinksSettingTab extends PluginSettingTab {
         : undefined;
     return entry ? { target: entry as unknown as Record<string, unknown>, field } : null;
   }
-}
-
-function createTemplate(): LinkTemplate {
-  return {
-    id: '',
-    body: '{this.wikilink}',
-    enabled: true,
-    collapseSpaces: true,
-    targetProperty: '',
-    targetValue: '',
-    sourceHeading: '',
-    sourceHeadingMatch: 'exact',
-  };
 }
 
 function moveTemplate(templates: LinkTemplate[], from: number, to: number): void {

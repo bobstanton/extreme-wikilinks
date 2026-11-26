@@ -7,7 +7,9 @@ import type { ExtremeWikilinksSettings } from './settings';
 import type { RenderedTemplateParts } from './templateEngine';
 import { applyTemplateName, hasBlockLevelOutput, renderTemplateMarkdown } from './templateOutputRenderer';
 import { recordTemplateFailure } from './logger';
-import { createExcludeMatcher, createRenderCaches, createWikilinkRenderRequest, findWikilinkTokens, formatOriginalWikilink, getRenderedParts, getWikilinkRenderMatch, isPathExcluded, serializeKey, type ExcludeRegexps, type WikilinkToken } from './wikilinkRender';
+import { createRenderCaches, createWikilinkRenderRequest, findWikilinkTokens, getRenderedParts, getWikilinkRenderMatch, type WikilinkToken } from './wikilinkRender';
+import { createExcludeMatcher, formatOriginalWikilink, isPathExcluded, serializeKey, type ExcludeRegexps } from './wikilinkCore';
+import { messageOf } from './errors';
 
 const refreshDecorationsEffect = StateEffect.define<void>();
 export const invalidateRendersEffect = StateEffect.define<void>();
@@ -252,7 +254,7 @@ function renderCacheKey(match: WikilinkMatch): string {
 }
 
 function recordRenderFailure(match: WikilinkMatch, error: unknown): void {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = messageOf(error);
   const wikilink = formatOriginalWikilink(match.rawTarget, match.linkDisplayText);
   recordTemplateFailure({
     sourcePath: match.sourcePath,

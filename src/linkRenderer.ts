@@ -2,7 +2,10 @@ import { App, MarkdownPostProcessorContext, MarkdownRenderChild } from 'obsidian
 import type { ExtremeWikilinksSettings } from './settings';
 import { applyTemplateName, renderTemplateMarkdown } from './templateOutputRenderer';
 import { recordTemplateFailure } from './logger';
-import { createExcludeMatcher, createRenderCaches, createWikilinkRenderRequest, getRenderedParts, getWikilinkRenderMatch, isPathExcluded, parseWikilinkTarget, resolveExplicitTargetFile, type ExcludeRegexps, type WikilinkRenderCaches } from './wikilinkRender';
+import { BLOCK_CLASS } from './codeBlock';
+import { createRenderCaches, createWikilinkRenderRequest, getRenderedParts, getWikilinkRenderMatch, parseWikilinkTarget, resolveExplicitTargetFile, type WikilinkRenderCaches } from './wikilinkRender';
+import { createExcludeMatcher, isPathExcluded, type ExcludeRegexps } from './wikilinkCore';
+import { messageOf } from './errors';
 import { findLinkDirectives, normalizeLinkDestination, type WikilinkDirective } from './wikilinkDirective';
 
 const ORIGINAL_DESTINATION_ATTRIBUTE = 'data-extreme-wikilinks-original-destination';
@@ -13,7 +16,7 @@ export class LinkRenderer {
   constructor(private readonly app: App, private readonly getSettings: () => ExtremeWikilinksSettings) {}
 
   async process(root: HTMLElement, context: MarkdownPostProcessorContext): Promise<void> {
-    if (root.closest('.extreme-wikilinks-link')) {
+    if (root.closest(`.extreme-wikilinks-link, .${BLOCK_CLASS}`)) {
       return;
     }
 
@@ -33,7 +36,7 @@ export class LinkRenderer {
     const links = Array.from(root.querySelectorAll<HTMLElement>(`a.internal-link, [${ORIGINAL_DESTINATION_ATTRIBUTE}]`))
       .filter(link => {
         const wrapper = link.closest('.extreme-wikilinks-link');
-        return (!wrapper || wrapper === link) && link.closest('.internal-embed') === embed;
+        return (!wrapper || wrapper === link) && link.closest('.internal-embed') === embed && !link.closest(`.${BLOCK_CLASS}`);
       });
     const sourceFile = resolveExplicitTargetFile(this.app, context.sourcePath);
     const sourceCache = sourceFile ? this.app.metadataCache.getFileCache(sourceFile) : null;
@@ -70,12 +73,11 @@ export class LinkRenderer {
       await renderTemplateMarkdown(this.app, wrapper, parts, context.sourcePath, child);
       link.replaceWith(wrapper);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
       recordTemplateFailure({
         sourcePath: context.sourcePath,
         wikilink: match.originalWikilink,
         template: match.template.body,
-        message,
+        message: messageOf(error),
       });
       return;
     }

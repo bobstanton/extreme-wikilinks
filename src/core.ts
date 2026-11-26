@@ -3,6 +3,6 @@ export type { ExcludePattern, ExtremeWikilinksSettings, HeadingMatchMode, LinkTe
 export { chooseTemplate } from './templateMatcher';
 export type { TemplateMatchContext } from './templateMatcher';
 export { compileRegex } from './regexUtils';
-export { createExcludeMatcher, formatOriginalWikilink, isPathExcluded, serializeKey } from './wikilinkRender';
-export type { ExcludeRegexps } from './wikilinkRender';
-export type { TemplateContext } from './templateEngine';
+export { createExcludeMatcher, formatOriginalWikilink, isPathExcluded, serializeKey } from './wikilinkCore';
+export type { ExcludeRegexps } from './wikilinkCore';
+export type { TemplateContext } from './templateContext';

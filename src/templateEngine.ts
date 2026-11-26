@@ -1,16 +1,9 @@
 import { App, TFile } from 'obsidian';
 import type { LinkTemplate } from './settings';
 import { CompositeContextProvider, ObsidianContextProvider, PlaceholderResolver, SimpleContextProvider } from 'placeholder-resolver';
-
-export interface TemplateContext {
-  readonly basename: string;
-  readonly linkDestination: string;
-  readonly linkDisplayText: string;
-  readonly path: string;
-  readonly title: string;
-  readonly wikilink: string;
-  readonly frontmatter: Record<string, unknown>;
-}
+import type { TemplateContext } from './templateContext';
+import { messageOf } from './errors';
+import { UnreadableValue } from './valueFormat';
 
 export interface RenderedTemplateParts {
   readonly markdown: string;
@@ -59,7 +52,7 @@ export async function validateTemplateSyntax(body: string): Promise<string | nul
   try {
     ({ diagnostics } = await resolver.resolveWithDetails(body));
   } catch (error) {
-    return error instanceof Error ? error.message : String(error);
+    return messageOf(error);
   }
 
   const diagnostic = diagnostics[0];
@@ -91,9 +84,24 @@ function formatMarkdownArray(values: readonly unknown[], escapeValue: (value: st
 
 function buildWikilinkContext(context: TemplateContext): Record<string, unknown> {
   return {
+    basename: context.basename,
+    frontmatter: context.frontmatter,
     linkDestination: context.linkDestination,
     linkDisplayText: context.linkDisplayText,
     title: context.title,
     wikilink: context.wikilink,
   };
+}
+
+export function collectTemplateValues(app: App, targetFile: TFile, context: TemplateContext): Record<string, unknown> {
+  const provided = new ObsidianContextProvider(app, targetFile).getEagerProperties();
+  const values: Record<string, unknown> = {};
+  for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(provided))) {
+    try {
+      values[key] = descriptor.get ? descriptor.get.call(provided) as unknown : descriptor.value;
+    } catch (error) {
+      values[key] = new UnreadableValue(messageOf(error));
+    }
+  }
+  return { ...values, ...buildWikilinkContext(context) };
 }

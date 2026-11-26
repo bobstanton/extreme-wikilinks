@@ -1,9 +1,10 @@
 import { EditorView } from '@codemirror/view';
-import { debounce, MarkdownView, Notice, Plugin, TFile } from 'obsidian';
+import { debounce, Events, MarkdownView, Notice, Plugin, TFile } from 'obsidian';
 import { LinkRenderer } from './linkRenderer';
 import { ExtremeWikilinksSettingTab } from './SettingsTab';
 import { createLivePreviewExtension, invalidateRendersEffect } from './livePreviewExtension';
-import { DEFAULT_SETTINGS, normalizeSettings, type ExtremeWikilinksSettings } from './settings';
+import { createTemplate, DEFAULT_SETTINGS, normalizeSettings, type ExtremeWikilinksSettings } from './settings';
+import { CODE_BLOCK_LANGUAGE, processCodeBlock, SETTINGS_CHANGED, type CodeBlockHost, type SaveTemplateResult } from './codeBlock';
 import { logger } from './logger';
 
 export default class ExtremeWikilinksPlugin extends Plugin {
@@ -11,6 +12,7 @@ export default class ExtremeWikilinksPlugin extends Plugin {
   private linkRenderer: LinkRenderer | null = null;
   private settingTab: ExtremeWikilinksSettingTab | null = null;
   private pendingWrite: Promise<unknown> = Promise.resolve();
+  private readonly events = new Events();
 
   private readonly debouncedSave = debounce(() => void this.saveSettings(), 400, true);
 
@@ -22,6 +24,15 @@ export default class ExtremeWikilinksPlugin extends Plugin {
       await this.linkRenderer?.process(element, context);
     });
     this.registerEditorExtension(createLivePreviewExtension(this.app, () => this.settings));
+    const codeBlockHost: CodeBlockHost = {
+      app: this.app,
+      getSettings: () => this.settings,
+      events: this.events,
+      saveTemplate: (name, body) => this.saveTemplate(name, body),
+    };
+    this.registerMarkdownCodeBlockProcessor(CODE_BLOCK_LANGUAGE, (source, element, context) => {
+      processCodeBlock(codeBlockHost, source, element, context);
+    });
     this.registerEvent(this.app.metadataCache.on('changed', (file) => {
       this.refreshOpenMarkdownViews(file);
     }));
@@ -32,11 +43,11 @@ export default class ExtremeWikilinksPlugin extends Plugin {
       callback: async () => {
         try {
           const entryCount = await logger.copyToClipboard();
-          new Notice(`Extreme Wikilinks: Debug log copied (${entryCount} entries)`, 3000);
+          new Notice(`Extreme wikilinks: Debug log copied (${entryCount} entries)`, 3000);
         }
         catch (error) {
           logger.scope('DebugLog').error('Failed to copy debug log', error);
-          new Notice('Extreme Wikilinks: Failed to copy debug log', 5000);
+          new Notice('Extreme wikilinks: Failed to copy debug log', 5000);
         }
       },
     });
@@ -59,6 +70,7 @@ export default class ExtremeWikilinksPlugin extends Plugin {
     this.settings = incoming;
     this.settingTab?.refresh();
     this.refreshOpenMarkdownViews();
+    this.events.trigger(SETTINGS_CHANGED);
   }
 
   async loadSettings(): Promise<void> {
@@ -80,6 +92,23 @@ export default class ExtremeWikilinksPlugin extends Plugin {
       .then(() => this.saveData(this.settings));
     await this.pendingWrite;
     this.refreshOpenMarkdownViews();
+    this.events.trigger(SETTINGS_CHANGED);
+  }
+
+  async saveTemplate(name: string, body: string): Promise<SaveTemplateResult> {
+    const named = this.settings.templates.filter(template => template.id.trim() === name);
+    if (named.length > 1) {
+      throw new Error(`${named.length} templates are named "${name}"`);
+    }
+
+    if (named.length === 1) {
+      named[0].body = body;
+    } else {
+      this.settings.templates.push(createTemplate({ id: name, body }));
+    }
+    this.settingTab?.refresh();
+    await this.saveSettings();
+    return named.length === 1 ? 'updated' : 'created';
   }
 
   private async readSettings(): Promise<ExtremeWikilinksSettings> {

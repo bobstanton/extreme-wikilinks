@@ -56,6 +56,20 @@ export function createExcludePattern(pattern = '\\.tmp$'): ExcludePattern {
   };
 }
 
+export function createTemplate(overrides: Partial<LinkTemplate> = {}): LinkTemplate {
+  return {
+    id: '',
+    body: '{this.wikilink}',
+    enabled: true,
+    collapseSpaces: true,
+    targetProperty: '',
+    targetValue: '',
+    sourceHeading: '',
+    sourceHeadingMatch: 'exact',
+    ...overrides,
+  };
+}
+
 function normalizeExcludePatterns(settings: LegacySettings): ExcludePattern[] {
   return (settings.excludePatterns ?? []).map(item => {
     if (typeof item === 'string') {

@@ -45,7 +45,10 @@ const core = await esbuild.context({
   banner: { js: banner },
   entryPoints: ["src/core.ts"],
   bundle: true,
-  external: ["obsidian", ...builtinModules, ...builtinModules.map(m => `node:${m}`)],
+  plugins: [{ name: "portable-core", setup(build) {
+    build.onResolve({ filter: /^(obsidian|electron)(\/|$)/ }, args => ({ errors: [{ text: `Portable core cannot import ${args.path}` }] }));
+  } }],
+  external: [...builtinModules, ...builtinModules.map(m => `node:${m}`)],
   format: "esm",
   target: "es2020",
   logLevel: "info",
